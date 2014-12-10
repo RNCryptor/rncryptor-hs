@@ -18,13 +18,17 @@ source-repository head
 library
   exposed-modules:
     Crypto.RNCryptor.V3
+    Crypto.RNCryptor.Types
   other-modules:
   build-depends:
       base >=4.6 && < 5
     , bytestring >= 0.9.0
+    , mtl >= 2.1
     , base64-bytestring >= 1.0.0.1
     , QuickCheck >= 2.6 && < 2.8
     , io-streams >= 1.2.0.0
+    , cipher-aes >= 0.2.0
+    , pbkdf >= 1.1.1.1
   hs-source-dirs:
     src
   default-language:
