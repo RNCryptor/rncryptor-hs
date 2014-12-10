@@ -1,8 +1,7 @@
-{-# LANGUAGE RecordWildCards #-}
-
-module Crypto.RNCryptor.V3 
+module Crypto.RNCryptor.V3
   ( parseHeader
   , decrypt
+  , decryptStream
   ) where
 
 import           Data.ByteString (ByteString)
@@ -11,6 +10,7 @@ import           Data.Word
 import           Control.Monad.State
 import           Crypto.RNCryptor.Types
 import           Crypto.Cipher.AES
+import qualified System.IO.Streams as S
 
 --------------------------------------------------------------------------------
 parseHeader :: ByteString -> RNCryptorHeader
@@ -75,5 +75,17 @@ parseHMAC leftover = flip evalState leftover $ parseBSOfSize 32 "parseHMAC: not 
 
 --------------------------------------------------------------------------------
 -- | Decrypt a raw Bytestring chunk.
-decrypt :: RNCryptorHeader -> AES -> ByteString -> ByteString
-decrypt RNCryptorHeader{..} _ _ = B.empty
+decrypt :: RNCryptorContext -> ByteString -> ByteString
+decrypt ctx = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx)
+
+--------------------------------------------------------------------------------
+decryptStream :: ByteString
+              -> S.InputStream ByteString
+              -> S.OutputStream ByteString
+              -> IO ()
+decryptStream userKey inS outS = do
+  rawHdr <- S.readExactly 34 inS
+  let hdr = parseHeader rawHdr
+  let ctx = newRNCryptorContext userKey hdr
+  decrypter <- S.map (decrypt ctx) inS
+  decrypter `S.connect` outS
