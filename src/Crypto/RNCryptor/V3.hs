@@ -122,7 +122,7 @@ decrypt input pwd =
 --------------------------------------------------------------------------------
 data DecryptionState =
     Continue
-  | FetchLeftOver Int
+  | FetchLeftOver !Int
   | DrainSource deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
