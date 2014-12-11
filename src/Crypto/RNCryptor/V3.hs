@@ -10,10 +10,10 @@ module Crypto.RNCryptor.V3
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import           Data.Word
-import           Data.Monoid
 import           Control.Monad.State
 import           Crypto.RNCryptor.Types
 import           Crypto.Cipher.AES
+import           Data.Monoid
 import qualified System.IO.Streams as S
 
 
@@ -89,6 +89,15 @@ blockSize :: Int
 blockSize = 16
 
 --------------------------------------------------------------------------------
+-- | This is the safest possible size for a block. The rationale is that we
+-- can have, given a raw 'ByteString' b, the final 32 bytes for the hmac, and
+-- a number of padding symbols which are bound to the maxBound :: Word8, which
+-- is 256 (possible values). This means we might need, upon reading a chunk, to
+-- go backward at most to 288 positions, before decrypting what is remained.
+minBlockSize :: Int
+minBlockSize = 288
+
+--------------------------------------------------------------------------------
 -- | This was taken directly from the Python implementation, see "post_decrypt_data",
 -- even though it doesn't seem to be a usual PKCS#7 removal:
 -- data = data[:-bord(data[-1])]
@@ -118,6 +127,12 @@ decrypt input pwd =
       clearText = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx) toDecrypt
   in  removePaddingSymbols clearText
 
+
+data DecryptionState = 
+    Continue
+  | FetchLeftOver Int
+  | DrainSource deriving (Show, Eq)
+
 --------------------------------------------------------------------------------
 decryptStream :: ByteString
               -> S.InputStream ByteString
@@ -127,33 +142,38 @@ decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
   let ctx = newRNCryptorContext userKey hdr
-  go B.empty ctx
+  go Continue mempty 0 ctx
   where
-    go :: ByteString -> RNCryptorContext -> IO ()
-    go !ibuffer ctx = do
-      nextChunk <- S.read inS
+    slack input = let bsL = B.length input in (bsL, bsL `mod` blockSize)
+
+    go :: DecryptionState -> ByteString -> Int -> RNCryptorContext -> IO ()
+    go dc !iBuffer !bSize ctx = do
+      nextChunk <- case dc of
+        FetchLeftOver size -> do
+          lo <- S.readExactly size inS
+          p  <- S.read inS
+          return $ fmap (mappend lo) p
+        _ -> S.read inS
       case nextChunk of
-        Nothing -> finaliseDecryption ibuffer ctx
+        Nothing -> finaliseDecryption iBuffer ctx
         (Just v) -> do
-         go (ibuffer <> v) ctx
-         --print $ "SIZE READ: " ++ (show $ B.length v)
-         --let slack = B.length v `mod` blockSize
-         --case slack of
-         --  0 -> do
-         --    print "PERFECT READ"
-         --    S.write (fmap (decryptBlock ctx) b) outS
-         --    go ctx
-         --  _ -> do
-         --    print $ "SLACK OF " ++ (show slack)
-         --    ended <- S.atEOF inS
-         --    print $ "ENDED " ++ (show ended)
-         --    case ended of
-         --      True -> finaliseDecryption v ctx
-         --      False -> do
-         --        let (toDecrypt, rest) = B.splitAt (B.length v - slack) v
-         --        S.write (Just $ decryptBlock ctx toDecrypt) outS
-         --        S.unRead rest inS
-         --        go ctx
+          let (sz, sl) = slack v
+          if dc == DrainSource
+             then go DrainSource (iBuffer <> v) (bSize + sz) ctx
+             else do
+                whatsNext <- S.peek inS
+                case whatsNext of
+                  Nothing -> finaliseDecryption (iBuffer <> v) ctx
+                  Just nt -> 
+                    case B.length nt >= 288 && B.length nt <= blockSize * 10 of
+                      True  -> go DrainSource (iBuffer <> v) (bSize + sz) ctx
+                      False -> do
+                        -- If I'm here, it means I can safely decrypt this
+                        -- chunk
+                        let (toDecrypt, rest) = B.splitAt (sz - sl) v
+                        S.write (Just $ decryptBlock ctx toDecrypt) outS
+                        S.unRead rest inS
+                        go (FetchLeftOver sl) iBuffer bSize ctx
 
     finaliseDecryption lastBlock ctx = do
       let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac
