@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Crypto.RNCryptor.V3
   ( pkcs7Padding
   , parseHeader
@@ -9,6 +10,7 @@ module Crypto.RNCryptor.V3
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import           Data.Word
+import           Data.Monoid
 import           Control.Monad.State
 import           Crypto.RNCryptor.Types
 import           Crypto.Cipher.AES
@@ -125,27 +127,34 @@ decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
   let ctx = newRNCryptorContext userKey hdr
-  go ctx
+  go B.empty ctx
   where
-    go :: RNCryptorContext -> IO ()
-    go ctx= do
+    go :: ByteString -> RNCryptorContext -> IO ()
+    go !ibuffer ctx = do
       nextChunk <- S.read inS
       case nextChunk of
-        Nothing -> return ()
-        b@(Just v) -> case B.length v `mod` blockSize of
-          0 -> do
-            S.write (fmap (decryptBlock ctx) b) outS
-            go ctx
-          _ -> do
-            S.unRead v inS
-            finaliseDecryption ctx
-
-    finaliseDecryption ctx = do
-      nextChunk <- S.read inS
-      case nextChunk of
-        Nothing -> return ()
+        Nothing -> finaliseDecryption ibuffer ctx
         (Just v) -> do
-          let (rest, _) = B.splitAt (B.length v - 32) v --strip the hmac
-          let slack = B.length rest `mod` blockSize
-          let restToDecrypt = B.take (B.length rest - slack) rest
-          S.write (Just $ removePaddingSymbols (decryptBlock ctx restToDecrypt)) outS
+         go (ibuffer <> v) ctx
+         --print $ "SIZE READ: " ++ (show $ B.length v)
+         --let slack = B.length v `mod` blockSize
+         --case slack of
+         --  0 -> do
+         --    print "PERFECT READ"
+         --    S.write (fmap (decryptBlock ctx) b) outS
+         --    go ctx
+         --  _ -> do
+         --    print $ "SLACK OF " ++ (show slack)
+         --    ended <- S.atEOF inS
+         --    print $ "ENDED " ++ (show ended)
+         --    case ended of
+         --      True -> finaliseDecryption v ctx
+         --      False -> do
+         --        let (toDecrypt, rest) = B.splitAt (B.length v - slack) v
+         --        S.write (Just $ decryptBlock ctx toDecrypt) outS
+         --        S.unRead rest inS
+         --        go ctx
+
+    finaliseDecryption lastBlock ctx = do
+      let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac
+      S.write (Just $ removePaddingSymbols (decryptBlock ctx rest)) outS
