@@ -1,6 +1,8 @@
 module Crypto.RNCryptor.V3
-  ( parseHeader
+  ( pkcs7Padding
+  , parseHeader
   , decrypt
+  , decryptBlock
   , decryptStream
   ) where
 
@@ -11,6 +13,13 @@ import           Control.Monad.State
 import           Crypto.RNCryptor.Types
 import           Crypto.Cipher.AES
 import qualified System.IO.Streams as S
+
+
+--------------------------------------------------------------------------------
+pkcs7Padding :: Int -> Int -> ByteString
+pkcs7Padding k l =
+  let octetsSize = k - (l `mod` k)
+  in  B.pack $ replicate octetsSize (fromInteger . toInteger $ octetsSize)
 
 --------------------------------------------------------------------------------
 parseHeader :: ByteString -> RNCryptorHeader
@@ -74,9 +83,38 @@ parseHMAC :: ByteString -> ByteString
 parseHMAC leftover = flip evalState leftover $ parseBSOfSize 32 "parseHMAC: not enough bytes."
 
 --------------------------------------------------------------------------------
--- | Decrypt a raw Bytestring chunk.
-decrypt :: RNCryptorContext -> ByteString -> ByteString
-decrypt ctx = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx)
+blockSize :: Int
+blockSize = 16
+
+--------------------------------------------------------------------------------
+-- | This was taken directly from the Python implementation, see "post_decrypt_data",
+-- even though it doesn't seem to be a usual PKCS#7 removal:
+-- data = data[:-bord(data[-1])]
+-- https://github.com/RNCryptor/RNCryptor-python/blob/master/RNCryptor.py#L69
+removePaddingSymbols :: ByteString -> ByteString
+removePaddingSymbols input = 
+  let lastWord = B.last input
+  in B.take (B.length input - fromEnum lastWord) input
+
+--------------------------------------------------------------------------------
+-- | Decrypt a raw Bytestring block
+decryptBlock :: RNCryptorContext -> ByteString -> ByteString
+decryptBlock ctx = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx)
+
+--------------------------------------------------------------------------------
+-- | Decrypt an encrypted message. Please be aware that this is a user-friendly
+-- but dangerous function, in the sense that it will load the *ENTIRE* input in
+-- memory. It's mostly suitable for small inputs like passwords. For large
+-- inputs, where size exceeds the available memory, please use 'decryptStream'.
+decrypt :: ByteString -> ByteString -> ByteString
+decrypt input pwd =
+  let (rawHdr, rest) = B.splitAt 34 input
+      -- remove the hmac at the end of the file
+      (toDecrypt, _) = B.splitAt (B.length rest - 32) rest
+      hdr = parseHeader rawHdr
+      ctx = newRNCryptorContext pwd hdr
+      clearText = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx) toDecrypt
+  in  removePaddingSymbols clearText
 
 --------------------------------------------------------------------------------
 decryptStream :: ByteString
@@ -87,5 +125,27 @@ decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
   let ctx = newRNCryptorContext userKey hdr
-  decrypter <- S.map (decrypt ctx) inS
-  decrypter `S.connect` outS
+  go ctx
+  where
+    go :: RNCryptorContext -> IO ()
+    go ctx= do
+      nextChunk <- S.read inS
+      case nextChunk of
+        Nothing -> return ()
+        b@(Just v) -> case B.length v `mod` blockSize of
+          0 -> do
+            S.write (fmap (decryptBlock ctx) b) outS
+            go ctx
+          _ -> do
+            S.unRead v inS
+            finaliseDecryption ctx
+
+    finaliseDecryption ctx = do
+      nextChunk <- S.read inS
+      case nextChunk of
+        Nothing -> return ()
+        (Just v) -> do
+          let (rest, _) = B.splitAt (B.length v - 32) v --strip the hmac
+          let slack = B.length rest `mod` blockSize
+          let restToDecrypt = B.take (B.length rest - slack) rest
+          S.write (Just $ removePaddingSymbols (decryptBlock ctx restToDecrypt)) outS

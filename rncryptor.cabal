@@ -61,6 +61,7 @@ executable rncryptor-stream
       base
     , bytestring
     , io-streams
+    , base64-bytestring
     , cipher-aes
     , rncryptor -any
   hs-source-dirs:

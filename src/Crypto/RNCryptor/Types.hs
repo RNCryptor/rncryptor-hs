@@ -6,7 +6,6 @@ module Crypto.RNCryptor.Types
      ) where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
 import Data.Word
 import Crypto.Cipher.AES
 import Crypto.PBKDF.ByteString
@@ -33,7 +32,6 @@ data RNCryptorHeader = RNCryptorHeader {
 --------------------------------------------------------------------------------
 -- A convenient datatype to avoid carrying around the AES cypher,
 -- the encrypted key and so on and so forth.
--- 
 data RNCryptorContext = RNCryptorContext {
         ctxHeader :: RNCryptorHeader
       , ctxCipher :: AES
@@ -42,6 +40,6 @@ data RNCryptorContext = RNCryptorContext {
 --------------------------------------------------------------------------------
 newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext
 newRNCryptorContext userKey hdr =
-  let eKey = sha1PBKDF2 userKey (rncHMACSalt hdr) 10000 32
+  let eKey = sha1PBKDF2 userKey (rncEncryptionSalt hdr) 10000 32
       cipher = initAES eKey
   in RNCryptorContext hdr cipher
