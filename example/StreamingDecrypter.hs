@@ -14,5 +14,6 @@ main = do
   args <- getArgs
   case args of
     "test":_ -> print $ Base64.encode $ decrypt testVector (B.pack "stupid")
-    key:_ -> decryptStream (B.pack key) S.stdin S.stdout
+    key:_ -> do
+      decryptStream (B.pack key) S.stdin S.stdout
     _ -> putStrLn "usage: rncryptor-stream <key>"
