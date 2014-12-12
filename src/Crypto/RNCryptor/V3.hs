@@ -150,9 +150,13 @@ data DecryptionState =
   | DrainSource deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
+-- | Efficiently decrypts an incoming stream of bytes.
 decryptStream :: ByteString
+              -- ^ The user key (e.g. password)
               -> S.InputStream ByteString
+              -- ^ The input source (mostly likely stdin)
               -> S.OutputStream ByteString
+              -- ^ The output source (mostly likely stdout)
               -> IO ()
 decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
