@@ -12,15 +12,15 @@ import Crypto.PBKDF.ByteString
 
 
 data RNCryptorHeader = RNCryptorHeader {
-        rncVersion :: Word8
+        rncVersion :: !Word8
       -- ^ Data format version. Currently 3.
-      , rncOptions :: Word8
+      , rncOptions :: !Word8
       -- ^ bit 0 - uses password
-      , rncEncryptionSalt :: ByteString
+      , rncEncryptionSalt :: !ByteString
       -- ^ iff option includes "uses password"
-      , rncHMACSalt :: ByteString
+      , rncHMACSalt :: !ByteString
       -- ^ iff options includes "uses password"
-      , rncIV :: AESIV
+      , rncIV :: !AESIV
       -- ^ The initialisation vector
       -- The ciphertext is variable and encrypted in CBC mode
       , rncHMAC :: (ByteString -> ByteString)

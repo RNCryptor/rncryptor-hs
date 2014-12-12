@@ -100,8 +100,14 @@ removePaddingSymbols input =
 
 --------------------------------------------------------------------------------
 -- | Decrypt a raw Bytestring block
-decryptBlock :: RNCryptorContext -> ByteString -> ByteString
-decryptBlock ctx = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx)
+decryptBlock :: RNCryptorContext
+             -> ByteString
+             -> (RNCryptorContext, ByteString)
+decryptBlock ctx cipherText = 
+  let clearText  = decryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
+      !sz        = B.length cipherText
+      !newHeader = (ctxHeader ctx) { rncIV = aesIV_ (B.drop (sz - 16) cipherText) }
+      in (ctx { ctxHeader = newHeader }, clearText)
 
 --------------------------------------------------------------------------------
 -- | Decrypt an encrypted message. Please be aware that this is a user-friendly
@@ -162,10 +168,11 @@ decryptStream userKey inS outS = do
                     False -> do
                       -- If I'm here, it means I can safely decrypt this chunk
                       let (toDecrypt, rest) = B.splitAt (sz - sl) v
-                      S.write (Just $ decryptBlock ctx toDecrypt) outS
+                      let (newCtx, clearT) = decryptBlock ctx toDecrypt
+                      S.write (Just $ clearT) outS
                       S.unRead rest inS
-                      go (FetchLeftOver sl) iBuffer ctx
+                      go (FetchLeftOver sl) iBuffer newCtx
 
     finaliseDecryption lastBlock ctx = do
       let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac
-      S.write (Just $ removePaddingSymbols (decryptBlock ctx rest)) outS
+      S.write (Just $ removePaddingSymbols (snd $ decryptBlock ctx rest)) outS
