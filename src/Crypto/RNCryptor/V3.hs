@@ -18,12 +18,24 @@ import qualified System.IO.Streams as S
 
 
 --------------------------------------------------------------------------------
-pkcs7Padding :: Int -> Int -> ByteString
+-- | Computes the padding as per PKCS#7. The specification can be found 
+-- here: http://tools.ietf.org/html/rfc5652#section-6.3
+pkcs7Padding :: Int
+             -- ^ The block size (e.g. 16 bytes)
+             -> Int
+             -- ^ The input size
+             -> ByteString
+             -- ^ The resulting padding
 pkcs7Padding k l =
   let octetsSize = k - (l `mod` k)
   in  B.pack $ replicate octetsSize (fromInteger . toInteger $ octetsSize)
 
 --------------------------------------------------------------------------------
+-- | Parse the input 'ByteString' to extract the 'RNCryptorHeader', as 
+-- defined in the V3 spec. The incoming 'ByteString' is expected to have
+-- at least 34 bytes available. As the HMAC can be found only at the very
+-- end of an encrypted file, 'RNCryptorHeader' provides by default a function
+-- to parse the HMAC, callable at the right time during streaming/parsing.
 parseHeader :: ByteString -> RNCryptorHeader
 parseHeader input = flip evalState input $ do
   v <- parseVersion
@@ -99,7 +111,10 @@ removePaddingSymbols input =
   in B.take (B.length input - fromEnum lastWord) input
 
 --------------------------------------------------------------------------------
--- | Decrypt a raw Bytestring block
+-- | Decrypt a raw Bytestring block. The function returns the clear text block
+-- plus a new 'RNCryptorContext', which is needed because the IV needs to be
+-- set to the last 16 bytes of the previous cipher text. (Thanks to Rob Napier
+-- for the insight).
 decryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
@@ -126,6 +141,9 @@ decrypt input pwd =
 
 
 --------------------------------------------------------------------------------
+-- | The 'DecryptionState' the streamer can be at. This is needed to drive the
+-- computation as well as reading leftovers unread back in case we need to
+-- chop the buffer read, if not multiple of the 'blockSize'.
 data DecryptionState =
     Continue
   | FetchLeftOver !Int
