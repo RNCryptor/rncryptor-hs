@@ -174,8 +174,11 @@ decryptStream userKey inS outS = do
                       let (toDecrypt, rest) = B.splitAt (sz - sl) v
                       let (newCtx, clearT) = decryptBlock ctx toDecrypt
                       S.write (Just clearT) outS
-                      S.unRead rest inS
-                      go (FetchLeftOver sl) iBuffer newCtx
+                      case sl == 0 of
+                        False -> do
+                          S.unRead rest inS
+                          go (FetchLeftOver sl) iBuffer newCtx
+                        True -> go Continue iBuffer newCtx
 
     finaliseDecryption lastBlock ctx = do
       let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac

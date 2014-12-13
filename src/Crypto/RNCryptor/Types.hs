@@ -46,7 +46,7 @@ blockSize = 16
 
 --------------------------------------------------------------------------------
 randomSaltIO :: Int -> IO ByteString
-randomSaltIO sz = C8.pack <$> forM [0 .. sz] (const $ randomRIO ('\NUL', '\255'))
+randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255'))
 
 --------------------------------------------------------------------------------
 -- | Generates a new 'RNCryptorHeader', suitable for encryption.

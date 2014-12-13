@@ -15,5 +15,5 @@ pkcs7Padding :: Int
              -> ByteString
              -- ^ The resulting padding
 pkcs7Padding k l =
-  let octetsSize = k - (l `mod` k)
-  in  B.pack $ replicate octetsSize (fromInteger . toInteger $ octetsSize)
+  let octetsSize = k - (l `rem` k)
+  in  B.pack $ replicate octetsSize (fromIntegral octetsSize)

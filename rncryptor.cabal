@@ -59,7 +59,7 @@ test-suite rncryptor-tests
     , tasty-quickcheck
     , tasty-hunit
 
-executable rncryptor-stream
+executable rncryptor-decrypt
   build-depends:
       base
     , bytestring
@@ -70,6 +70,22 @@ executable rncryptor-stream
     example
   main-is:
     StreamingDecrypter.hs
+  default-language:
+    Haskell2010
+  ghc-options:
+    -funbox-strict-fields
+
+executable rncryptor-encrypt
+  build-depends:
+      base
+    , bytestring
+    , io-streams
+    , cipher-aes
+    , rncryptor -any
+  hs-source-dirs:
+    example
+  main-is:
+    StreamingEncrypter.hs
   default-language:
     Haskell2010
   ghc-options:
