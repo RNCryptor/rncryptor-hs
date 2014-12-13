@@ -1,12 +1,20 @@
-
+{-# LANGUAGE RecordWildCards #-}
 module Crypto.RNCryptor.Types 
      ( RNCryptorHeader(..)
      , RNCryptorContext(ctxHeader, ctxCipher)
      , newRNCryptorContext
+     , newRNCryptorHeader
+     , renderRNCryptorHeader
+     , blockSize
      ) where
 
-import Data.ByteString (ByteString)
+import Data.ByteString (cons, ByteString)
+import qualified Data.ByteString.Char8 as C8
 import Data.Word
+import Data.Monoid
+import System.Random
+import Control.Applicative
+import Control.Monad
 import Crypto.Cipher.AES
 import Crypto.PBKDF.ByteString
 
@@ -20,7 +28,7 @@ data RNCryptorHeader = RNCryptorHeader {
       -- ^ iff option includes "uses password"
       , rncHMACSalt :: !ByteString
       -- ^ iff options includes "uses password"
-      , rncIV :: !AESIV
+      , rncIV :: !ByteString
       -- ^ The initialisation vector
       -- The ciphertext is variable and encrypted in CBC mode
       , rncHMAC :: (ByteString -> ByteString)
@@ -28,6 +36,43 @@ data RNCryptorHeader = RNCryptorHeader {
       -- as the HMAC is at the end of the file.
       }
 
+--------------------------------------------------------------------------------
+saltSize :: Int
+saltSize = 8
+
+--------------------------------------------------------------------------------
+blockSize :: Int
+blockSize = 16
+
+--------------------------------------------------------------------------------
+randomSaltIO :: Int -> IO ByteString
+randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255'))
+
+--------------------------------------------------------------------------------
+-- | Generates a new 'RNCryptorHeader', suitable for encryption.
+newRNCryptorHeader :: ByteString -> IO RNCryptorHeader
+newRNCryptorHeader userKey = do
+  let version = toEnum 3
+  let options = toEnum 1
+  eSalt    <- randomSaltIO saltSize
+  iv       <- randomSaltIO blockSize
+  hmacSalt <- randomSaltIO saltSize
+  return RNCryptorHeader {
+        rncVersion = version
+      , rncOptions = options
+      , rncEncryptionSalt = eSalt
+      , rncHMACSalt = hmacSalt
+      , rncIV = iv
+      , rncHMAC = const $ sha1PBKDF2 userKey hmacSalt 10000 32
+      }
+
+--------------------------------------------------------------------------------
+-- | Concatenates this 'RNCryptorHeader' into a raw sequence of bytes, up to the
+-- IV. This means you need to append the ciphertext plus the HMAC to finalise 
+-- the encrypted file.
+renderRNCryptorHeader :: RNCryptorHeader -> ByteString
+renderRNCryptorHeader RNCryptorHeader{..} =
+  rncVersion `cons` rncOptions `cons` (rncEncryptionSalt <> rncHMACSalt <> rncIV)
 
 --------------------------------------------------------------------------------
 -- A convenient datatype to avoid carrying around the AES cypher,
