@@ -2,6 +2,7 @@
 module Crypto.RNCryptor.Types 
      ( RNCryptorHeader(..)
      , RNCryptorContext(ctxHeader, ctxCipher)
+     , UserInput(..)
      , newRNCryptorContext
      , newRNCryptorHeader
      , renderRNCryptorHeader
@@ -17,6 +18,7 @@ import Control.Applicative
 import Control.Monad
 import Crypto.Cipher.AES
 import Crypto.PBKDF.ByteString
+import Test.QuickCheck
 
 
 data RNCryptorHeader = RNCryptorHeader {
@@ -35,6 +37,25 @@ data RNCryptorHeader = RNCryptorHeader {
       -- ^ The HMAC (32 bytes). This field is a continuation
       -- as the HMAC is at the end of the file.
       }
+
+instance Show RNCryptorHeader where
+  show = C8.unpack . renderRNCryptorHeader
+
+instance Arbitrary RNCryptorHeader where
+  arbitrary = do
+    let version = toEnum 3
+    let options = toEnum 1
+    eSalt    <- C8.pack <$> vector saltSize
+    iv       <- C8.pack <$> vector blockSize
+    hmacSalt <- C8.pack <$> vector saltSize
+    return RNCryptorHeader {
+          rncVersion = version
+        , rncOptions = options
+        , rncEncryptionSalt = eSalt
+        , rncHMACSalt = hmacSalt
+        , rncIV = iv
+        , rncHMAC = \uKey -> sha1PBKDF2 uKey hmacSalt 10000 32
+        }
 
 --------------------------------------------------------------------------------
 saltSize :: Int
@@ -81,6 +102,11 @@ data RNCryptorContext = RNCryptorContext {
         ctxHeader :: RNCryptorHeader
       , ctxCipher :: AES
       }
+
+newtype UserInput = UI { unInput :: ByteString } deriving Show
+
+instance Arbitrary UserInput where
+  arbitrary = UI . C8.pack <$> arbitrary
 
 --------------------------------------------------------------------------------
 newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext

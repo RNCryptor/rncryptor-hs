@@ -1,11 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           System.Environment
-import           Data.Monoid
 import           Tests
 import           Test.Tasty
-import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
 ----------------------------------------------------------------------
@@ -18,5 +15,7 @@ main :: IO ()
 main = do
   defaultMainWithIngredients defaultIngredients $
     testGroup "RNCryptor tests" $ [
-         testGroup "RNCryptor properties" []
+         withQuickCheckDepth "RNCryptor properties" 100 [
+           testProperty "encrypt/decrypt roundtrip" testEncryptDecryptRoundtrip
+         ]
      ]
