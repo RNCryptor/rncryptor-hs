@@ -11,6 +11,7 @@ import qualified Data.ByteString as B
 import           Data.Word
 import           Control.Monad.State
 import           Crypto.RNCryptor.Types
+import           Crypto.RNCryptor.V3.Stream
 import           Crypto.Cipher.AES
 import           Data.Monoid
 import qualified System.IO.Streams as S
@@ -123,15 +124,6 @@ decrypt input pwd =
 
 
 --------------------------------------------------------------------------------
--- | The 'DecryptionState' the streamer can be at. This is needed to drive the
--- computation as well as reading leftovers unread back in case we need to
--- chop the buffer read, if not multiple of the 'blockSize'.
-data DecryptionState =
-    Continue
-  | FetchLeftOver !Int
-  | DrainSource deriving (Show, Eq)
-
---------------------------------------------------------------------------------
 -- | Efficiently decrypts an incoming stream of bytes.
 decryptStream :: ByteString
               -- ^ The user key (e.g. password)
@@ -144,42 +136,8 @@ decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
   let ctx = newRNCryptorContext userKey hdr
-  go Continue mempty ctx
+  processStream ctx inS outS decryptBlock finaliseDecryption
   where
-    slack input = let bsL = B.length input in (bsL, bsL `mod` blockSize)
-
-    go :: DecryptionState -> ByteString -> RNCryptorContext -> IO ()
-    go dc !iBuffer ctx = do
-      nextChunk <- case dc of
-        FetchLeftOver size -> do
-          lo <- S.readExactly size inS
-          p  <- S.read inS
-          return $ fmap (mappend lo) p
-        _ -> S.read inS
-      case nextChunk of
-        Nothing -> finaliseDecryption iBuffer ctx
-        (Just v) -> do
-          let (sz, sl) = slack v
-          case dc of
-            DrainSource -> go DrainSource (iBuffer <> v) ctx
-            _ -> do
-              whatsNext <- S.peek inS
-              case whatsNext of
-                Nothing -> finaliseDecryption (iBuffer <> v) ctx
-                Just nt ->
-                  case sz + B.length nt < 4096 of
-                    True  -> go DrainSource (iBuffer <> v) ctx
-                    False -> do
-                      -- If I'm here, it means I can safely decrypt this chunk
-                      let (toDecrypt, rest) = B.splitAt (sz - sl) v
-                      let (newCtx, clearT) = decryptBlock ctx toDecrypt
-                      S.write (Just clearT) outS
-                      case sl == 0 of
-                        False -> do
-                          S.unRead rest inS
-                          go (FetchLeftOver sl) iBuffer newCtx
-                        True -> go Continue iBuffer newCtx
-
     finaliseDecryption lastBlock ctx = do
       let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac
       S.write (Just $ removePaddingSymbols (snd $ decryptBlock ctx rest)) outS
