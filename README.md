@@ -9,8 +9,7 @@ encrypted file format by Rob Napier.
 
 # TODO
 - HMAC Validation
-- Encryption
-- Test vectors & QuickCheck properties
+- Test vectors testing
 - Profiling & optimisations
 
 # Contributors
