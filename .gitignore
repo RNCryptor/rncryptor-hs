@@ -3,3 +3,4 @@ dist
 cabal.sandbox.config
 shell.nix
 cabal.config
+.stack-work
