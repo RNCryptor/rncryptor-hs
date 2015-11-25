@@ -1,0 +1,7 @@
+resolver: lts-3.14
+system-ghc: false
+install-ghc: true
+packages:
+- '.'
+extra-deps:
+  - pbkdf-1.1.1.1
