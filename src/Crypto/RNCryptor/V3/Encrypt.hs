@@ -11,9 +11,9 @@ import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
 import           Crypto.RNCryptor.Padding
 import           Crypto.Cipher.AES
+import           Crypto.Hash.SHA256
 import           Data.Monoid
 import qualified System.IO.Streams as S
-
 
 --------------------------------------------------------------------------------
 -- | Encrypt a raw Bytestring block. The function returns the encrypt text block
@@ -38,8 +38,10 @@ encrypt :: RNCryptorContext -> ByteString -> ByteString
 encrypt ctx input =
   let hdr = ctxHeader ctx
       inSz = B.length input
-      (_, clearText) = encryptBlock ctx (input <> pkcs7Padding blockSize inSz)
-  in renderRNCryptorHeader hdr <> clearText <> (rncHMAC hdr $ mempty)
+      (_, cipherText) = encryptBlock ctx (input <> pkcs7Padding blockSize inSz)
+      msgHdr  = renderRNCryptorHeader hdr
+      msgHMAC = rncHMAC hdr $ msgHdr <> cipherText
+  in msgHdr <> cipherText <> msgHMAC
 
 --------------------------------------------------------------------------------
 -- | Efficiently encrypt an incoming stream of bytes.
