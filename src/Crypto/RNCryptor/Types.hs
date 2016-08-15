@@ -18,6 +18,7 @@ import Control.Applicative
 import Control.Monad
 import Crypto.Cipher.AES
 import Crypto.PBKDF.ByteString
+import Crypto.Hash.SHA256
 import Test.QuickCheck
 
 
@@ -84,7 +85,7 @@ newRNCryptorHeader userKey = do
       , rncEncryptionSalt = eSalt
       , rncHMACSalt = hmacSalt
       , rncIV = iv
-      , rncHMAC = const $ sha1PBKDF2 userKey hmacSalt 10000 32
+      , rncHMAC = hmac $ sha1PBKDF2 userKey hmacSalt 10000 32
       }
 
 --------------------------------------------------------------------------------
