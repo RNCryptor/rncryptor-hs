@@ -9,8 +9,10 @@ module Crypto.RNCryptor.V3.Decrypt
 import           Control.Monad.State
 import           Crypto.Cipher.AES           (AES128)
 import           Crypto.Cipher.Types         (IV, makeIV, BlockCipher, cbcDecrypt)
+import           Crypto.MAC.HMAC             (update, finalize)
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
+import           Data.ByteArray              (convert)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString as B
 import           Data.Maybe                  (maybe)
@@ -110,10 +112,11 @@ decryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
 decryptBlock ctx cipherText = 
-  let clearText  = decrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
-      !sz        = B.length cipherText
-      !newHeader = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) cipherText) }
-      in (ctx { ctxHeader = newHeader }, clearText)
+  let clearText   = decrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
+      !newHMACCtx = update (ctxHMACCtx ctx) cipherText
+      !sz         = B.length cipherText
+      !newHeader  = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) cipherText) }
+      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText)
 
 --------------------------------------------------------------------------------
 consistentTimeEqual :: ByteString -> ByteString -> Bool
@@ -148,9 +151,13 @@ decryptStream :: ByteString
 decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
-  let ctx = newRNCryptorContext userKey hdr
-  processStream ctx inS outS decryptBlock finaliseDecryption
+      ctx = newRNCryptorContext userKey hdr
+      ctx' = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) rawHdr }
+  processStream ctx' inS outS decryptBlock finaliseDecryption
   where
     finaliseDecryption lastBlock ctx = do
-      let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac
-      S.write (Just $ removePaddingSymbols (snd $ decryptBlock ctx rest)) outS
+      let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
+          (ctx', clearText)     = decryptBlock ctx cipherText
+          hmac = convert $ finalize (ctxHMACCtx ctx')
+      when (not (consistentTimeEqual msgHMAC hmac)) (fail "failed decrypt, invalid HMAC")
+      S.write (Just $ removePaddingSymbols clearText) outS

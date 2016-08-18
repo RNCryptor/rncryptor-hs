@@ -7,9 +7,11 @@ module Crypto.RNCryptor.V3.Encrypt
 
 import           Crypto.Cipher.AES          (AES128)
 import           Crypto.Cipher.Types        (makeIV, IV, BlockCipher, cbcEncrypt)
+import           Crypto.MAC.HMAC            (update, finalize)
 import           Crypto.RNCryptor.Padding
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
+import           Data.ByteArray             (convert)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString as B
 import           Data.Maybe                 (maybe)
@@ -31,10 +33,11 @@ encryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
 encryptBlock ctx clearText = 
-  let cipherText  = encrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
-      !sz        = B.length clearText
-      !newHeader = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) clearText) }
-      in (ctx { ctxHeader = newHeader }, cipherText)
+  let cipherText = encrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
+      !newHmacCtx = update (ctxHMACCtx ctx) cipherText
+      !sz         = B.length clearText
+      !newHeader  = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) clearText) }
+      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHmacCtx }, cipherText)
 
 --------------------------------------------------------------------------------
 -- | Encrypt a message. Please be aware that this is a user-friendly
@@ -43,12 +46,10 @@ encryptBlock ctx clearText =
 -- inputs, where size exceeds the available memory, please use 'encryptStream'.
 encrypt :: RNCryptorContext -> ByteString -> ByteString
 encrypt ctx input =
-  let key = ctxKey ctx
-      hdr = ctxHeader ctx
-      inSz = B.length input
-      (_, cipherText) = encryptBlock ctx (input <> pkcs7Padding blockSize inSz)
-      msgHdr  = renderRNCryptorHeader hdr
-      msgHMAC = (rncHMAC hdr) key $ msgHdr <> cipherText
+  let msgHdr  = renderRNCryptorHeader $ ctxHeader ctx
+      ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
+      (ctx'', cipherText) = encryptBlock ctx' (input <> pkcs7Padding blockSize (B.length input))
+      msgHMAC = convert $ finalize (ctxHMACCtx ctx'')  -- msgHMAC = (rncHMAC hdr) key $ msgHdr <> cipherText
   in msgHdr <> cipherText <> msgHMAC
 
 --------------------------------------------------------------------------------
@@ -62,13 +63,13 @@ encryptStream :: ByteString
               -> IO ()
 encryptStream userKey inS outS = do
   hdr <- newRNCryptorHeader 
-  let ctx = newRNCryptorContext userKey hdr
-  S.write (Just $ renderRNCryptorHeader hdr) outS
-  processStream ctx inS outS encryptBlock finaliseEncryption
+  let ctx     = newRNCryptorContext userKey hdr
+      msgHdr  = renderRNCryptorHeader hdr
+      ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
+  S.write (Just msgHdr) outS
+  processStream ctx' inS outS encryptBlock finaliseEncryption
   where
     finaliseEncryption lastBlock ctx = do
-      let inSz = B.length lastBlock
-          padding = pkcs7Padding blockSize inSz
-      S.write (Just (snd $ encryptBlock ctx (lastBlock <> padding))) outS
-      -- Finalise the block with the HMAC
-      S.write (Just ((rncHMAC . ctxHeader $ ctx) userKey mempty)) outS
+      let (ctx', cipherText) = encryptBlock ctx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
+      S.write (Just cipherText) outS
+      S.write (Just (convert $ finalize (ctxHMACCtx ctx'))) outS
