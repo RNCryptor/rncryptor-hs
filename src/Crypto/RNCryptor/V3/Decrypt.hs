@@ -6,16 +6,17 @@ module Crypto.RNCryptor.V3.Decrypt
   , decryptStream
   ) where
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import           Data.Word
 import           Control.Monad.State
+import           Crypto.Cipher.AES           (AES128)
+import           Crypto.Cipher.Types         (IV, makeIV, BlockCipher, cbcDecrypt)
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
-import           Crypto.Cipher.AES
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString as B
+import           Data.Maybe                  (maybe)
 import           Data.Monoid
+import           Data.Word
 import qualified System.IO.Streams as S
-
 
 --------------------------------------------------------------------------------
 -- | Parse the input 'ByteString' to extract the 'RNCryptorHeader', as 
@@ -36,7 +37,7 @@ parseHeader input = flip evalState input $ do
     , rncEncryptionSalt = eSalt
     , rncHMACSalt = hmacSalt
     , rncIV = iv
-    , rncHMAC = parseHMAC
+    , rncHMAC = \bs pwd -> error "internal error, uninitialized HMAC alg"
     }
 
 --------------------------------------------------------------------------------
@@ -94,6 +95,13 @@ removePaddingSymbols input =
   in B.take (B.length input - fromEnum lastWord) input
 
 --------------------------------------------------------------------------------
+decrypt_ :: AES128 -> ByteString -> ByteString -> ByteString
+decrypt_ a iv cipherText =
+  cbcDecrypt a iv' cipherText
+  where
+    iv' = maybe (error "decrypt_ failed makeIV") id $ makeIV iv
+
+--------------------------------------------------------------------------------
 -- | Decrypt a raw Bytestring block. The function returns the clear text block
 -- plus a new 'RNCryptorContext', which is needed because the IV needs to be
 -- set to the last 16 bytes of the previous cipher text. (Thanks to Rob Napier
@@ -102,10 +110,14 @@ decryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
 decryptBlock ctx cipherText = 
-  let clearText  = decryptCBC (ctxCipher ctx) (aesIV_ . rncIV . ctxHeader $ ctx) cipherText
+  let clearText  = decrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
       !sz        = B.length cipherText
       !newHeader = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) cipherText) }
       in (ctx { ctxHeader = newHeader }, clearText)
+
+--------------------------------------------------------------------------------
+consistentTimeEqual :: ByteString -> ByteString -> Bool
+consistentTimeEqual a b = and $ B.zipWith (==) a b
 
 --------------------------------------------------------------------------------
 -- | Decrypt an encrypted message. Please be aware that this is a user-friendly
@@ -116,12 +128,13 @@ decrypt :: ByteString -> ByteString -> ByteString
 decrypt input pwd =
   let (rawHdr, rest) = B.splitAt 34 input
       -- remove the hmac at the end of the file
-      (toDecrypt, _) = B.splitAt (B.length rest - 32) rest
-      hdr = parseHeader rawHdr
+      (cipherText, msgHMAC) = B.splitAt (B.length rest - 32) rest
+      hdr = parseHeader $ rawHdr
       ctx = newRNCryptorContext pwd hdr
-      clearText = decryptCBC (ctxCipher ctx) (aesIV_ . rncIV . ctxHeader $ ctx) toDecrypt
-  in  removePaddingSymbols clearText
-
+      clearText = decrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
+      hmac = makeHMAC (rncHMACSalt . ctxHeader $ ctx)  pwd $ rawHdr <> cipherText
+  in
+    if consistentTimeEqual msgHMAC hmac then removePaddingSymbols clearText else error "failed decrypt, invalid HMAC"
 
 --------------------------------------------------------------------------------
 -- | Efficiently decrypts an incoming stream of bytes.

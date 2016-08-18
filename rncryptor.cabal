@@ -31,9 +31,8 @@ library
     , random >= 1.0.0.1
     , QuickCheck >= 2.6 && < 2.9
     , io-streams >= 1.2.0.0
-    , cipher-aes >= 0.2.9
-    , pbkdf >= 1.1.1.1
-    , cryptohash-sha256 >= 0.11.100.1
+    , cryptonite
+    , memory
   hs-source-dirs:
     src
   default-language:
@@ -65,8 +64,8 @@ executable rncryptor-decrypt
   build-depends:
       base
     , bytestring
+    , cryptonite
     , io-streams
-    , cipher-aes
     , rncryptor -any
   hs-source-dirs:
     example
@@ -82,7 +81,7 @@ executable rncryptor-encrypt
       base
     , bytestring
     , io-streams
-    , cipher-aes
+    , cryptonite
     , rncryptor -any
   hs-source-dirs:
     example

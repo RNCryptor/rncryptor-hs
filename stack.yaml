@@ -4,5 +4,3 @@ install-ghc: true
 packages:
 - '.'
 extra-deps:
-  - pbkdf-1.1.1.1
-  - cryptohash-sha256-0.11.100.1

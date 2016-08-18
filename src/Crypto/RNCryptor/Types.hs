@@ -1,26 +1,32 @@
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.RNCryptor.Types 
      ( RNCryptorHeader(..)
-     , RNCryptorContext(ctxHeader, ctxCipher)
+     , RNCryptorContext(ctxHeader, ctxKey, ctxCipher)
      , UserInput(..)
      , newRNCryptorContext
      , newRNCryptorHeader
+     , makeHMAC
      , renderRNCryptorHeader
      , blockSize
      ) where
 
-import Data.ByteString (cons, ByteString)
+import           Control.Applicative
+import           Control.Monad
+import           Crypto.Cipher.AES      (AES128)
+import           Crypto.Cipher.Types    (Cipher(..))
+import           Crypto.Error           (CryptoFailable(..))
+import           Crypto.Hash            (Digest(..))
+import           Crypto.Hash.Algorithms (SHA1, SHA256)
+import           Crypto.Hash.IO         (HashAlgorithm(..))
+import           Crypto.KDF.PBKDF2      (generate, prfHMAC, Parameters(..))
+import           Crypto.MAC.HMAC        (HMAC(..), hmac)
+import           Data.ByteArray         (convert)
+import           Data.ByteString        (cons, ByteString)
 import qualified Data.ByteString.Char8 as C8
-import Data.Word
-import Data.Monoid
-import System.Random
-import Control.Applicative
-import Control.Monad
-import Crypto.Cipher.AES
-import Crypto.PBKDF.ByteString
-import Crypto.Hash.SHA256
-import Test.QuickCheck
-
+import           Data.Monoid
+import           Data.Word
+import           System.Random
+import           Test.QuickCheck        (Arbitrary(..), vector)
 
 data RNCryptorHeader = RNCryptorHeader {
         rncVersion :: !Word8
@@ -34,9 +40,9 @@ data RNCryptorHeader = RNCryptorHeader {
       , rncIV :: !ByteString
       -- ^ The initialisation vector
       -- The ciphertext is variable and encrypted in CBC mode
-      , rncHMAC :: (ByteString -> ByteString)
-      -- ^ The HMAC (32 bytes). This field is a continuation
-      -- as the HMAC is at the end of the file.
+      , rncHMAC :: (ByteString -> ByteString -> ByteString)
+      -- ^ Function to compute the HMAC (32 bytes),
+      -- args are user key and message bytes
       }
 
 instance Show RNCryptorHeader where
@@ -55,7 +61,7 @@ instance Arbitrary RNCryptorHeader where
         , rncEncryptionSalt = eSalt
         , rncHMACSalt = hmacSalt
         , rncIV = iv
-        , rncHMAC = \uKey -> sha1PBKDF2 uKey hmacSalt 10000 32
+        , rncHMAC = makeHMAC hmacSalt
         }
 
 --------------------------------------------------------------------------------
@@ -71,9 +77,17 @@ randomSaltIO :: Int -> IO ByteString
 randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255'))
 
 --------------------------------------------------------------------------------
+makeHMAC :: ByteString -> ByteString -> ByteString -> ByteString
+makeHMAC hmacSalt userKey secret =
+  let key        = generate (prfHMAC (undefined::SHA1)) (Parameters 10000 32) userKey hmacSalt::ByteString
+      hmacSha256 = hmac key secret::HMAC SHA256
+  in
+      convert hmacSha256
+
+--------------------------------------------------------------------------------
 -- | Generates a new 'RNCryptorHeader', suitable for encryption.
-newRNCryptorHeader :: ByteString -> IO RNCryptorHeader
-newRNCryptorHeader userKey = do
+newRNCryptorHeader :: IO RNCryptorHeader
+newRNCryptorHeader = do
   let version = toEnum 3
   let options = toEnum 1
   eSalt    <- randomSaltIO saltSize
@@ -85,7 +99,7 @@ newRNCryptorHeader userKey = do
       , rncEncryptionSalt = eSalt
       , rncHMACSalt = hmacSalt
       , rncIV = iv
-      , rncHMAC = hmac $ sha1PBKDF2 userKey hmacSalt 10000 32
+      , rncHMAC = makeHMAC hmacSalt
       }
 
 --------------------------------------------------------------------------------
@@ -101,7 +115,8 @@ renderRNCryptorHeader RNCryptorHeader{..} =
 -- the encrypted key and so on and so forth.
 data RNCryptorContext = RNCryptorContext {
         ctxHeader :: RNCryptorHeader
-      , ctxCipher :: AES
+      , ctxKey    :: ByteString
+      , ctxCipher :: AES128
       }
 
 newtype UserInput = UI { unInput :: ByteString } deriving Show
@@ -109,9 +124,14 @@ newtype UserInput = UI { unInput :: ByteString } deriving Show
 instance Arbitrary UserInput where
   arbitrary = UI . C8.pack <$> arbitrary
 
+cipherInitNoError :: Cipher c => c -> ByteString -> c
+cipherInitNoError _ k = case cipherInit k of
+  CryptoPassed a -> a
+  CryptoFailed e -> error (show e)
+
 --------------------------------------------------------------------------------
 newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext
 newRNCryptorContext userKey hdr =
-  let eKey = sha1PBKDF2 userKey (rncEncryptionSalt hdr) 10000 32
-      cipher = initAES eKey
-  in RNCryptorContext hdr cipher
+  let eKey = generate (prfHMAC (undefined::SHA1)) (Parameters 10000 32) userKey (rncEncryptionSalt hdr)
+      cipher =  cipherInitNoError (undefined::AES128) eKey
+  in RNCryptorContext hdr userKey cipher

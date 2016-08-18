@@ -9,7 +9,6 @@ import qualified Data.ByteString as B
 import           Data.Word
 import           Control.Monad.State
 import           Crypto.RNCryptor.Types
-import           Crypto.Cipher.AES
 import           Data.Monoid
 import qualified System.IO.Streams as S
 
