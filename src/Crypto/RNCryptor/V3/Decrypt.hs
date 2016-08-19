@@ -7,15 +7,17 @@ module Crypto.RNCryptor.V3.Decrypt
   ) where
 
 import           Control.Monad.State
-import           Crypto.Cipher.AES           (AES128)
+import           Crypto.Cipher.AES           (AES256)
 import           Crypto.Cipher.Types         (IV, makeIV, BlockCipher, cbcDecrypt)
 import           Crypto.MAC.HMAC             (update, finalize)
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
+import           Data.Bits                   (xor, (.|.))
 import           Data.ByteArray              (convert)
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString as B
-import           Data.Maybe                  (maybe)
+import           Data.Foldable
+import           Data.Maybe                  (fromMaybe)
 import           Data.Monoid
 import           Data.Word
 import qualified System.IO.Streams as S
@@ -92,11 +94,11 @@ removePaddingSymbols input =
   in B.take (B.length input - fromEnum lastWord) input
 
 --------------------------------------------------------------------------------
-decrypt_ :: AES128 -> ByteString -> ByteString -> ByteString
+decrypt_ :: AES256 -> ByteString -> ByteString -> ByteString
 decrypt_ a iv cipherText =
   cbcDecrypt a iv' cipherText
   where
-    iv' = maybe (error "decrypt_ failed makeIV") id $ makeIV iv
+    iv' = fromMaybe (error "decrypt_ failed makeIV") $ makeIV iv
 
 --------------------------------------------------------------------------------
 -- | Decrypt a raw Bytestring block. The function returns the clear text block
@@ -114,10 +116,19 @@ decryptBlock ctx cipherText =
       in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText)
 
 --------------------------------------------------------------------------------
--- TBD:  need strictness here to overcome lazy pull from zip results stopping at
--- first False?
+-- "A consistent time function needs to be clear on which parameter is secret and
+-- which one is untrusted. Your complexity must always be proportional to the length
+-- of the untrusted data, not the secret."
+-- 
+-- Below, untrusted == arrived in the message, secret == computed
+--
 consistentTimeEqual :: ByteString -> ByteString -> Bool
-consistentTimeEqual a b = and $ B.zipWith (==) a b
+consistentTimeEqual untrusted secret =
+  let initialResult = if B.length secret == B.length untrusted then 0 else 1 :: Word8
+      secretCycle = cycle (B.unpack secret)
+      xorResults = zipWith xor (B.unpack untrusted) secretCycle
+  in
+    0 == foldl' (.|.) initialResult xorResults
 
 --------------------------------------------------------------------------------
 -- | Decrypt an encrypted message. Please be aware that this is a user-friendly
@@ -156,5 +167,5 @@ decryptStream userKey inS outS = do
       let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
           (ctx', clearText)     = decryptBlock ctx cipherText
           hmac = convert $ finalize (ctxHMACCtx ctx')
-      when (not (consistentTimeEqual msgHMAC hmac)) (fail "failed decrypt, invalid HMAC")
+      unless (consistentTimeEqual msgHMAC hmac) (fail "failed decrypt, invalid HMAC")
       S.write (Just $ removePaddingSymbols clearText) outS

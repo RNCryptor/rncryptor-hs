@@ -12,7 +12,7 @@ module Crypto.RNCryptor.Types
 
 import           Control.Applicative
 import           Control.Monad
-import           Crypto.Cipher.AES      (AES128)
+import           Crypto.Cipher.AES      (AES256)
 import           Crypto.Cipher.Types    (Cipher(..))
 import           Crypto.Error           (CryptoFailable(..))
 import           Crypto.Hash            (Digest(..))
@@ -74,12 +74,12 @@ randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255')
 
 --------------------------------------------------------------------------------
 makeKey :: ByteString -> ByteString -> ByteString
-makeKey = generate (prfHMAC (undefined::SHA1)) (Parameters 10000 32) -- userKey salt
+makeKey = \userKey salt -> generate (prfHMAC (undefined::SHA1)) (Parameters 10000 32) userKey salt
 
 --------------------------------------------------------------------------------
 makeHMAC :: ByteString -> ByteString -> ByteString -> ByteString
 makeHMAC hmacSalt userKey secret =
-  let key        = makeKey userKey hmacSalt::ByteString
+  let key        = makeKey userKey hmacSalt
       hmacSha256 = hmac key secret::HMAC SHA256
   in
       convert hmacSha256
@@ -114,7 +114,7 @@ renderRNCryptorHeader RNCryptorHeader{..} =
 -- the encrypted key and so on and so forth.
 data RNCryptorContext = RNCryptorContext {
         ctxHeader  :: RNCryptorHeader
-      , ctxCipher  :: AES128
+      , ctxCipher  :: AES256
       , ctxHMACCtx :: Context SHA256
       }
 
@@ -136,5 +136,5 @@ newRNCryptorContext userKey hdr =
       hmacKey  = makeKey userKey hmacSalt
       hmacCtx  = initialize hmacKey::Context SHA256
       encKey   = makeKey userKey $ rncEncryptionSalt hdr
-      cipher   = cipherInitNoError (undefined::AES128) encKey
+      cipher   = cipherInitNoError (undefined::AES256) encKey
   in RNCryptorContext hdr cipher hmacCtx

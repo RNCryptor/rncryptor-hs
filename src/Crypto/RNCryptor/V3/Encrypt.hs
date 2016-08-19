@@ -5,7 +5,7 @@ module Crypto.RNCryptor.V3.Encrypt
   , encryptStream
   ) where
 
-import           Crypto.Cipher.AES          (AES128)
+import           Crypto.Cipher.AES          (AES256)
 import           Crypto.Cipher.Types        (makeIV, IV, BlockCipher, cbcEncrypt)
 import           Crypto.MAC.HMAC            (update, finalize)
 import           Crypto.RNCryptor.Padding
@@ -14,15 +14,15 @@ import           Crypto.RNCryptor.V3.Stream
 import           Data.ByteArray             (convert)
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString as B
-import           Data.Maybe                 (maybe)
+import           Data.Maybe                 (fromMaybe)
 import           Data.Monoid
 import qualified System.IO.Streams as S
 
-encrypt_ :: AES128 -> ByteString -> ByteString -> ByteString
+encrypt_ :: AES256 -> ByteString -> ByteString -> ByteString
 encrypt_ a iv clearText =
   cbcEncrypt a iv' clearText
   where
-    iv' = maybe (error "encrypt_ failed makeIV") id $ makeIV iv
+    iv' = fromMaybe (error "encrypt_ failed makeIV") $ makeIV iv
 
 --------------------------------------------------------------------------------
 -- | Encrypt a raw Bytestring block. The function returns the encrypt text block
