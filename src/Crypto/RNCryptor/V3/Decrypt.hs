@@ -39,7 +39,6 @@ parseHeader input = flip evalState input $ do
     , rncEncryptionSalt = eSalt
     , rncHMACSalt = hmacSalt
     , rncIV = iv
-    , rncHMAC = \bs pwd -> error "internal error, uninitialized HMAC alg"
     }
 
 --------------------------------------------------------------------------------
@@ -135,7 +134,7 @@ decrypt input pwd =
       hdr = parseHeader $ rawHdr
       ctx = newRNCryptorContext pwd hdr
       clearText = decrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
-      hmac = makeHMAC (rncHMACSalt . ctxHeader $ ctx)  pwd $ rawHdr <> cipherText
+      hmac = makeHMAC (rncHMACSalt . ctxHeader $ ctx) pwd $ rawHdr <> cipherText
   in
     if consistentTimeEqual msgHMAC hmac then removePaddingSymbols clearText else error "failed decrypt, invalid HMAC"
 

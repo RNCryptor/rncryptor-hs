@@ -49,7 +49,7 @@ encrypt ctx input =
   let msgHdr  = renderRNCryptorHeader $ ctxHeader ctx
       ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
       (ctx'', cipherText) = encryptBlock ctx' (input <> pkcs7Padding blockSize (B.length input))
-      msgHMAC = convert $ finalize (ctxHMACCtx ctx'')  -- msgHMAC = (rncHMAC hdr) key $ msgHdr <> cipherText
+      msgHMAC = convert $ finalize (ctxHMACCtx ctx'')
   in msgHdr <> cipherText <> msgHMAC
 
 --------------------------------------------------------------------------------
