@@ -82,10 +82,6 @@ parseIV :: State ByteString ByteString
 parseIV = parseBSOfSize 16 "parseIV: not enough bytes."
 
 --------------------------------------------------------------------------------
-parseHMAC :: ByteString -> ByteString
-parseHMAC leftover = flip evalState leftover $ parseBSOfSize 32 "parseHMAC: not enough bytes."
-
---------------------------------------------------------------------------------
 -- | This was taken directly from the Python implementation, see "post_decrypt_data",
 -- even though it doesn't seem to be a usual PKCS#7 removal:
 -- data = data[:-bord(data[-1])]
@@ -118,6 +114,8 @@ decryptBlock ctx cipherText =
       in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText)
 
 --------------------------------------------------------------------------------
+-- TBD:  need strictness here to overcome lazy pull from zip results stopping at
+-- first False?
 consistentTimeEqual :: ByteString -> ByteString -> Bool
 consistentTimeEqual a b = and $ B.zipWith (==) a b
 
