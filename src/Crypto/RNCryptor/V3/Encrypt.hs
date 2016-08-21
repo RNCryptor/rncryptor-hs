@@ -18,11 +18,10 @@ import           Data.Maybe                 (fromMaybe)
 import           Data.Monoid
 import qualified System.IO.Streams as S
 
-encrypt_ :: AES256 -> ByteString -> ByteString -> ByteString
-encrypt_ a iv clearText =
-  cbcEncrypt a iv' clearText
+encryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
+encryptBytes a iv = cbcEncrypt a iv'
   where
-    iv' = fromMaybe (error "encrypt_ failed makeIV") $ makeIV iv
+    iv' = fromMaybe (error "encryptBytes: makeIV failed.") $ makeIV iv
 
 --------------------------------------------------------------------------------
 -- | Encrypt a raw Bytestring block. The function returns the encrypt text block
@@ -33,10 +32,10 @@ encryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
 encryptBlock ctx clearText = 
-  let cipherText = encrypt_ (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
+  let cipherText = encryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
       !newHmacCtx = update (ctxHMACCtx ctx) cipherText
       !sz         = B.length clearText
-      !newHeader  = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) clearText) }
+      !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) clearText }
       in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHmacCtx }, cipherText)
 
 --------------------------------------------------------------------------------
@@ -62,7 +61,7 @@ encryptStream :: ByteString
               -- ^ The output source (mostly likely stdout)
               -> IO ()
 encryptStream userKey inS outS = do
-  hdr <- newRNCryptorHeader 
+  hdr <- newRNCryptorHeader
   let ctx     = newRNCryptorContext userKey hdr
       msgHdr  = renderRNCryptorHeader hdr
       ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }

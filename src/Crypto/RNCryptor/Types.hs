@@ -23,7 +23,7 @@ import           Crypto.Hash.IO         (HashAlgorithm(..))
 import           Crypto.KDF.PBKDF2      (generate, prfHMAC, Parameters(..))
 import           Crypto.MAC.HMAC        (HMAC(..), Context, initialize, hmac)
 import           Data.ByteArray         (ByteArray, convert)
-import           Data.ByteString        (cons, ByteString)
+import           Data.ByteString        (cons, ByteString, unpack)
 import qualified Data.ByteString.Char8 as C8
 import           Data.Monoid
 import           Data.Typeable
@@ -39,8 +39,8 @@ data RNCryptorException =
   deriving Typeable
 
 instance Show RNCryptorException where
-  show (InvalidHMACException untrusted computed) = "InvalidHMACException: Untrusted HMAC was " <> C8.unpack untrusted
-                                                 <> ", but the computed one is " <> C8.unpack computed <> "."
+  show (InvalidHMACException untrusted computed) = "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
+                                                 <> ", but the computed one is " <> show (unpack computed) <> "."
 
 instance Exception RNCryptorException
 
