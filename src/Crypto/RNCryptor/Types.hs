@@ -151,7 +151,7 @@ newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext
 newRNCryptorContext userKey hdr =
   let hmacSalt = rncHMACSalt hdr
       hmacKey  = makeKey userKey hmacSalt
-      hmacCtx  = initialize hmacKey::Context SHA256
+      hmacCtx  = initialize hmacKey
       encKey   = makeKey userKey $ rncEncryptionSalt hdr
       cipher   = cipherInitNoError encKey
-  in RNCryptorContext hdr cipher hmacCtx
+  in RNCryptorContext hdr cipher (hmacCtx :: Context SHA256)
