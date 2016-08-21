@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Crypto.RNCryptor.Types
-     ( RNCryptorHeader(..)
+     ( RNCryptorException(..)
+     , RNCryptorHeader(..)
      , RNCryptorContext(ctxHeader, ctxHMACCtx, ctxCipher)
      , UserInput(..)
      , newRNCryptorContext
@@ -15,6 +16,7 @@ import           Control.Monad
 import           Crypto.Cipher.AES      (AES256)
 import           Crypto.Cipher.Types    (Cipher(..))
 import           Crypto.Error           (CryptoFailable(..))
+import           Control.Exception      (Exception)
 import           Crypto.Hash            (Digest(..))
 import           Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
 import           Crypto.Hash.IO         (HashAlgorithm(..))
@@ -24,9 +26,24 @@ import           Data.ByteArray         (ByteArray, convert)
 import           Data.ByteString        (cons, ByteString)
 import qualified Data.ByteString.Char8 as C8
 import           Data.Monoid
+import           Data.Typeable
 import           Data.Word
 import           System.Random
 import           Test.QuickCheck        (Arbitrary(..), vector)
+
+
+data RNCryptorException =
+  InvalidHMACException !ByteString !ByteString
+  -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
+  -- second the computed one.
+  deriving Typeable
+
+instance Show RNCryptorException where
+  show (InvalidHMACException untrusted computed) = "InvalidHMACException: Untrusted HMAC was " <> C8.unpack untrusted
+                                                 <> ", but the computed one is " <> C8.unpack computed <> "."
+
+instance Exception RNCryptorException
+
 
 data RNCryptorHeader = RNCryptorHeader {
         rncVersion :: !Word8
