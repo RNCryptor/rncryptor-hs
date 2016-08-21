@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module Crypto.RNCryptor.Types 
+module Crypto.RNCryptor.Types
      ( RNCryptorHeader(..)
      , RNCryptorContext(ctxHeader, ctxHMACCtx, ctxCipher)
      , UserInput(..)
@@ -16,7 +16,7 @@ import           Crypto.Cipher.AES      (AES256)
 import           Crypto.Cipher.Types    (Cipher(..))
 import           Crypto.Error           (CryptoFailable(..))
 import           Crypto.Hash            (Digest(..))
-import           Crypto.Hash.Algorithms (SHA1, SHA256)
+import           Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
 import           Crypto.Hash.IO         (HashAlgorithm(..))
 import           Crypto.KDF.PBKDF2      (generate, prfHMAC, Parameters(..))
 import           Crypto.MAC.HMAC        (HMAC(..), Context, initialize, hmac)
@@ -74,15 +74,15 @@ randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255')
 
 --------------------------------------------------------------------------------
 makeKey :: ByteString -> ByteString -> ByteString
-makeKey = \userKey salt -> generate (prfHMAC (undefined::SHA1)) (Parameters 10000 32) userKey salt
+makeKey = generate (prfHMAC SHA1) (Parameters 10000 32)
 
 --------------------------------------------------------------------------------
 makeHMAC :: ByteString -> ByteString -> ByteString -> ByteString
 makeHMAC hmacSalt userKey secret =
   let key        = makeKey userKey hmacSalt
-      hmacSha256 = hmac key secret::HMAC SHA256
+      hmacSha256 = hmac key secret
   in
-      convert hmacSha256
+      convert (hmacSha256 :: HMAC SHA256)
 
 --------------------------------------------------------------------------------
 -- | Generates a new 'RNCryptorHeader', suitable for encryption.
@@ -103,7 +103,7 @@ newRNCryptorHeader = do
 
 --------------------------------------------------------------------------------
 -- | Concatenates this 'RNCryptorHeader' into a raw sequence of bytes, up to the
--- IV. This means you need to append the ciphertext plus the HMAC to finalise 
+-- IV. This means you need to append the ciphertext plus the HMAC to finalise
 -- the encrypted file.
 renderRNCryptorHeader :: RNCryptorHeader -> ByteString
 renderRNCryptorHeader RNCryptorHeader{..} =
@@ -124,10 +124,10 @@ instance Arbitrary UserInput where
   arbitrary = UI . C8.pack <$> arbitrary
 
 --------------------------------------------------------------------------------
-cipherInitNoError :: Cipher c => c -> ByteString -> c
-cipherInitNoError _ k = case cipherInit k of
+cipherInitNoError :: ByteString -> AES256
+cipherInitNoError k = case cipherInit k of
   CryptoPassed a -> a
-  CryptoFailed e -> error (show e)
+  CryptoFailed e -> error ("cipherInitNoError: " <> show e)
 
 --------------------------------------------------------------------------------
 newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext
@@ -136,5 +136,5 @@ newRNCryptorContext userKey hdr =
       hmacKey  = makeKey userKey hmacSalt
       hmacCtx  = initialize hmacKey::Context SHA256
       encKey   = makeKey userKey $ rncEncryptionSalt hdr
-      cipher   = cipherInitNoError (undefined::AES256) encKey
+      cipher   = cipherInitNoError encKey
   in RNCryptorContext hdr cipher hmacCtx
