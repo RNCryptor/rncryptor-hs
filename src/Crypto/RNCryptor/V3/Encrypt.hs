@@ -5,15 +5,23 @@ module Crypto.RNCryptor.V3.Encrypt
   , encryptStream
   ) where
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
+import           Crypto.Cipher.AES          (AES256)
+import           Crypto.Cipher.Types        (makeIV, IV, BlockCipher, cbcEncrypt)
+import           Crypto.MAC.HMAC            (update, finalize)
+import           Crypto.RNCryptor.Padding
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
-import           Crypto.RNCryptor.Padding
-import           Crypto.Cipher.AES
+import           Data.ByteArray             (convert)
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString as B
+import           Data.Maybe                 (fromMaybe)
 import           Data.Monoid
 import qualified System.IO.Streams as S
 
+encryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
+encryptBytes a iv = cbcEncrypt a iv'
+  where
+    iv' = fromMaybe (error "encryptBytes: makeIV failed.") $ makeIV iv
 
 --------------------------------------------------------------------------------
 -- | Encrypt a raw Bytestring block. The function returns the encrypt text block
@@ -24,10 +32,11 @@ encryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
 encryptBlock ctx clearText = 
-  let cipherText  = encryptCBC (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
-      !sz        = B.length clearText
-      !newHeader = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) clearText) }
-      in (ctx { ctxHeader = newHeader }, cipherText)
+  let cipherText = encryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
+      !newHmacCtx = update (ctxHMACCtx ctx) cipherText
+      !sz         = B.length clearText
+      !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) clearText }
+      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHmacCtx }, cipherText)
 
 --------------------------------------------------------------------------------
 -- | Encrypt a message. Please be aware that this is a user-friendly
@@ -36,10 +45,11 @@ encryptBlock ctx clearText =
 -- inputs, where size exceeds the available memory, please use 'encryptStream'.
 encrypt :: RNCryptorContext -> ByteString -> ByteString
 encrypt ctx input =
-  let hdr = ctxHeader ctx
-      inSz = B.length input
-      (_, clearText) = encryptBlock ctx (input <> pkcs7Padding blockSize inSz)
-  in renderRNCryptorHeader hdr <> clearText <> (rncHMAC hdr $ mempty)
+  let msgHdr  = renderRNCryptorHeader $ ctxHeader ctx
+      ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
+      (ctx'', cipherText) = encryptBlock ctx' (input <> pkcs7Padding blockSize (B.length input))
+      msgHMAC = convert $ finalize (ctxHMACCtx ctx'')
+  in msgHdr <> cipherText <> msgHMAC
 
 --------------------------------------------------------------------------------
 -- | Efficiently encrypt an incoming stream of bytes.
@@ -51,14 +61,14 @@ encryptStream :: ByteString
               -- ^ The output source (mostly likely stdout)
               -> IO ()
 encryptStream userKey inS outS = do
-  hdr <- newRNCryptorHeader userKey
-  let ctx = newRNCryptorContext userKey hdr
-  S.write (Just $ renderRNCryptorHeader hdr) outS
-  processStream ctx inS outS encryptBlock finaliseEncryption
+  hdr <- newRNCryptorHeader
+  let ctx     = newRNCryptorContext userKey hdr
+      msgHdr  = renderRNCryptorHeader hdr
+      ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
+  S.write (Just msgHdr) outS
+  processStream ctx' inS outS encryptBlock finaliseEncryption
   where
     finaliseEncryption lastBlock ctx = do
-      let inSz = B.length lastBlock
-          padding = pkcs7Padding blockSize inSz
-      S.write (Just (snd $ encryptBlock ctx (lastBlock <> padding))) outS
-      -- Finalise the block with the HMAC
-      S.write (Just ((rncHMAC . ctxHeader $ ctx) mempty)) outS
+      let (ctx', cipherText) = encryptBlock ctx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
+      S.write (Just cipherText) outS
+      S.write (Just (convert $ finalize (ctxHMACCtx ctx'))) outS

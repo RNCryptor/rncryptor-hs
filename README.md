@@ -8,13 +8,14 @@ encrypted file format by Rob Napier.
 * V3 - [Spec](https://github.com/RNCryptor/RNCryptor-Spec/blob/master/RNCryptor-Spec-v3.md)
 
 # TODO
-- HMAC Validation
-- Test vectors testing
-- Profiling & optimisations
+- [X] HMAC Validation
+- [ ] Test vectors testing
+- [ ] Profiling & optimisations
 
-# Contributors
+# Contributors (Sorted by name)
 - Alfredo Di Napoli (creator and maintainer)
 - Rob Napier (gave me the key insight to use the previous cipher text as IV for the new block)
+- Tom Titchener (added support for HMAC validation)
 
 # Contributions
 This library scratches my own itches, but please fork away!

@@ -1,24 +1,49 @@
 {-# LANGUAGE RecordWildCards #-}
-module Crypto.RNCryptor.Types 
-     ( RNCryptorHeader(..)
-     , RNCryptorContext(ctxHeader, ctxCipher)
+{-# LANGUAGE DeriveDataTypeable #-}
+module Crypto.RNCryptor.Types
+     ( RNCryptorException(..)
+     , RNCryptorHeader(..)
+     , RNCryptorContext(ctxHeader, ctxHMACCtx, ctxCipher)
      , UserInput(..)
      , newRNCryptorContext
      , newRNCryptorHeader
      , renderRNCryptorHeader
+     , makeHMAC
      , blockSize
      ) where
 
-import Data.ByteString (cons, ByteString)
+import           Control.Applicative
+import           Control.Monad
+import           Crypto.Cipher.AES      (AES256)
+import           Crypto.Cipher.Types    (Cipher(..))
+import           Crypto.Error           (CryptoFailable(..))
+import           Control.Exception      (Exception)
+import           Crypto.Hash            (Digest(..))
+import           Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
+import           Crypto.Hash.IO         (HashAlgorithm(..))
+import           Crypto.KDF.PBKDF2      (generate, prfHMAC, Parameters(..))
+import           Crypto.MAC.HMAC        (HMAC(..), Context, initialize, hmac)
+import           Data.ByteArray         (ByteArray, convert)
+import           Data.ByteString        (cons, ByteString, unpack)
 import qualified Data.ByteString.Char8 as C8
-import Data.Word
-import Data.Monoid
-import System.Random
-import Control.Applicative
-import Control.Monad
-import Crypto.Cipher.AES
-import Crypto.PBKDF.ByteString
-import Test.QuickCheck
+import           Data.Monoid
+import           Data.Typeable
+import           Data.Word
+import           System.Random
+import           Test.QuickCheck        (Arbitrary(..), vector)
+
+
+data RNCryptorException =
+  InvalidHMACException !ByteString !ByteString
+  -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
+  -- second the computed one.
+  deriving Typeable
+
+instance Show RNCryptorException where
+  show (InvalidHMACException untrusted computed) = "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
+                                                 <> ", but the computed one is " <> show (unpack computed) <> "."
+
+instance Exception RNCryptorException
 
 
 data RNCryptorHeader = RNCryptorHeader {
@@ -33,9 +58,6 @@ data RNCryptorHeader = RNCryptorHeader {
       , rncIV :: !ByteString
       -- ^ The initialisation vector
       -- The ciphertext is variable and encrypted in CBC mode
-      , rncHMAC :: (ByteString -> ByteString)
-      -- ^ The HMAC (32 bytes). This field is a continuation
-      -- as the HMAC is at the end of the file.
       }
 
 instance Show RNCryptorHeader where
@@ -54,7 +76,6 @@ instance Arbitrary RNCryptorHeader where
         , rncEncryptionSalt = eSalt
         , rncHMACSalt = hmacSalt
         , rncIV = iv
-        , rncHMAC = \uKey -> sha1PBKDF2 uKey hmacSalt 10000 32
         }
 
 --------------------------------------------------------------------------------
@@ -70,9 +91,21 @@ randomSaltIO :: Int -> IO ByteString
 randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255'))
 
 --------------------------------------------------------------------------------
+makeKey :: ByteString -> ByteString -> ByteString
+makeKey = generate (prfHMAC SHA1) (Parameters 10000 32)
+
+--------------------------------------------------------------------------------
+makeHMAC :: ByteString -> ByteString -> ByteString -> ByteString
+makeHMAC hmacSalt userKey secret =
+  let key        = makeKey userKey hmacSalt
+      hmacSha256 = hmac key secret
+  in
+      convert (hmacSha256 :: HMAC SHA256)
+
+--------------------------------------------------------------------------------
 -- | Generates a new 'RNCryptorHeader', suitable for encryption.
-newRNCryptorHeader :: ByteString -> IO RNCryptorHeader
-newRNCryptorHeader userKey = do
+newRNCryptorHeader :: IO RNCryptorHeader
+newRNCryptorHeader = do
   let version = toEnum 3
   let options = toEnum 1
   eSalt    <- randomSaltIO saltSize
@@ -84,12 +117,11 @@ newRNCryptorHeader userKey = do
       , rncEncryptionSalt = eSalt
       , rncHMACSalt = hmacSalt
       , rncIV = iv
-      , rncHMAC = const $ sha1PBKDF2 userKey hmacSalt 10000 32
       }
 
 --------------------------------------------------------------------------------
 -- | Concatenates this 'RNCryptorHeader' into a raw sequence of bytes, up to the
--- IV. This means you need to append the ciphertext plus the HMAC to finalise 
+-- IV. This means you need to append the ciphertext plus the HMAC to finalise
 -- the encrypted file.
 renderRNCryptorHeader :: RNCryptorHeader -> ByteString
 renderRNCryptorHeader RNCryptorHeader{..} =
@@ -99,8 +131,9 @@ renderRNCryptorHeader RNCryptorHeader{..} =
 -- A convenient datatype to avoid carrying around the AES cypher,
 -- the encrypted key and so on and so forth.
 data RNCryptorContext = RNCryptorContext {
-        ctxHeader :: RNCryptorHeader
-      , ctxCipher :: AES
+        ctxHeader  :: RNCryptorHeader
+      , ctxCipher  :: AES256
+      , ctxHMACCtx :: Context SHA256
       }
 
 newtype UserInput = UI { unInput :: ByteString } deriving Show
@@ -109,8 +142,17 @@ instance Arbitrary UserInput where
   arbitrary = UI . C8.pack <$> arbitrary
 
 --------------------------------------------------------------------------------
+cipherInitNoError :: ByteString -> AES256
+cipherInitNoError k = case cipherInit k of
+  CryptoPassed a -> a
+  CryptoFailed e -> error ("cipherInitNoError: " <> show e)
+
+--------------------------------------------------------------------------------
 newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext
 newRNCryptorContext userKey hdr =
-  let eKey = sha1PBKDF2 userKey (rncEncryptionSalt hdr) 10000 32
-      cipher = initAES eKey
-  in RNCryptorContext hdr cipher
+  let hmacSalt = rncHMACSalt hdr
+      hmacKey  = makeKey userKey hmacSalt
+      hmacCtx  = initialize hmacKey
+      encKey   = makeKey userKey $ rncEncryptionSalt hdr
+      cipher   = cipherInitNoError encKey
+  in RNCryptorContext hdr cipher (hmacCtx :: Context SHA256)

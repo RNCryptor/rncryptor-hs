@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Tests
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import Test.Tasty
+import Test.Tasty.HUnit
+import Test.Tasty.QuickCheck
+import Tests
 
 ----------------------------------------------------------------------
 withQuickCheckDepth :: TestName -> Int -> [TestTree] -> TestTree
@@ -15,7 +16,8 @@ main :: IO ()
 main = do
   defaultMainWithIngredients defaultIngredients $
     testGroup "RNCryptor tests" $ [
-         withQuickCheckDepth "RNCryptor properties" 100 [
+           testCase "Swift-encrypted input can be decrypted" testForeignEncryption
+         , withQuickCheckDepth "RNCryptor properties" 100 [
            testProperty "encrypt/decrypt roundtrip" testEncryptDecryptRoundtrip
          ]
      ]

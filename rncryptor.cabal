@@ -1,5 +1,5 @@
 name:                rncryptor
-version:             0.0.2.3
+version:             0.1.0.0
 synopsis:            Haskell implementation of the RNCryptor file format
 description:         Pure Haskell implementation of the RNCrytor spec.
 license:             MIT
@@ -31,8 +31,8 @@ library
     , random >= 1.0.0.1
     , QuickCheck >= 2.6 && < 2.9
     , io-streams >= 1.2.0.0
-    , cipher-aes >= 0.2.9
-    , pbkdf >= 1.1.1.1
+    , cryptonite >= 0.15
+    , memory
   hs-source-dirs:
     src
   default-language:
@@ -64,8 +64,8 @@ executable rncryptor-decrypt
   build-depends:
       base
     , bytestring
+    , cryptonite >= 0.15
     , io-streams
-    , cipher-aes
     , rncryptor -any
   hs-source-dirs:
     example
@@ -81,7 +81,7 @@ executable rncryptor-encrypt
       base
     , bytestring
     , io-streams
-    , cipher-aes
+    , cryptonite >= 0.15
     , rncryptor -any
   hs-source-dirs:
     example

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Crypto.RNCryptor.V3.Decrypt
   ( parseHeader
   , decrypt
@@ -6,19 +7,25 @@ module Crypto.RNCryptor.V3.Decrypt
   , decryptStream
   ) where
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import           Data.Word
 import           Control.Monad.State
+import           Control.Exception           (throwIO)
+import           Crypto.Cipher.AES           (AES256)
+import           Crypto.Cipher.Types         (IV, makeIV, BlockCipher, cbcDecrypt)
+import           Crypto.MAC.HMAC             (update, finalize)
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
-import           Crypto.Cipher.AES
+import           Data.Bits                   (xor, (.|.))
+import           Data.ByteArray              (convert)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString as B
+import           Data.Foldable
+import           Data.Maybe                  (fromMaybe)
 import           Data.Monoid
+import           Data.Word
 import qualified System.IO.Streams as S
 
-
 --------------------------------------------------------------------------------
--- | Parse the input 'ByteString' to extract the 'RNCryptorHeader', as 
+-- | Parse the input 'ByteString' to extract the 'RNCryptorHeader', as
 -- defined in the V3 spec. The incoming 'ByteString' is expected to have
 -- at least 34 bytes available. As the HMAC can be found only at the very
 -- end of an encrypted file, 'RNCryptorHeader' provides by default a function
@@ -36,7 +43,6 @@ parseHeader input = flip evalState input $ do
     , rncEncryptionSalt = eSalt
     , rncHMACSalt = hmacSalt
     , rncIV = iv
-    , rncHMAC = parseHMAC
     }
 
 --------------------------------------------------------------------------------
@@ -46,8 +52,8 @@ parseSingleWord8 err = do
   let (v,vs) = B.splitAt 1 bs
   put vs
   case B.unpack v of
-    x:[] -> return x
-    _ -> fail err
+    [x] -> return x
+    _   -> fail err
 
 --------------------------------------------------------------------------------
 parseBSOfSize :: Int -> String -> State ByteString ByteString
@@ -80,18 +86,20 @@ parseIV :: State ByteString ByteString
 parseIV = parseBSOfSize 16 "parseIV: not enough bytes."
 
 --------------------------------------------------------------------------------
-parseHMAC :: ByteString -> ByteString
-parseHMAC leftover = flip evalState leftover $ parseBSOfSize 32 "parseHMAC: not enough bytes."
-
---------------------------------------------------------------------------------
 -- | This was taken directly from the Python implementation, see "post_decrypt_data",
 -- even though it doesn't seem to be a usual PKCS#7 removal:
 -- data = data[:-bord(data[-1])]
 -- https://github.com/RNCryptor/RNCryptor-python/blob/master/RNCryptor.py#L69
 removePaddingSymbols :: ByteString -> ByteString
-removePaddingSymbols input = 
+removePaddingSymbols input =
   let lastWord = B.last input
   in B.take (B.length input - fromEnum lastWord) input
+
+--------------------------------------------------------------------------------
+decryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
+decryptBytes a iv = cbcDecrypt a iv'
+  where
+    iv' = fromMaybe (error "decryptBytes: makeIV failed.") $ makeIV iv
 
 --------------------------------------------------------------------------------
 -- | Decrypt a raw Bytestring block. The function returns the clear text block
@@ -101,11 +109,26 @@ removePaddingSymbols input =
 decryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
-decryptBlock ctx cipherText = 
-  let clearText  = decryptCBC (ctxCipher ctx) (aesIV_ . rncIV . ctxHeader $ ctx) cipherText
-      !sz        = B.length cipherText
-      !newHeader = (ctxHeader ctx) { rncIV = (B.drop (sz - 16) cipherText) }
-      in (ctx { ctxHeader = newHeader }, clearText)
+decryptBlock ctx cipherText =
+  let clearText   = decryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
+      !newHMACCtx = update (ctxHMACCtx ctx) cipherText
+      !sz         = B.length cipherText
+      !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) cipherText }
+      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText)
+
+--------------------------------------------------------------------------------
+-- "A consistent time function needs to be clear on which parameter is secret and
+-- which one is untrusted. Your complexity must always be proportional to the length
+-- of the untrusted data, not the secret."
+--
+-- Below, untrusted == arrived in the message, secret == computed
+--
+consistentTimeEqual :: ByteString -> ByteString -> Bool
+consistentTimeEqual untrusted secret =
+  let (initialResult :: Word8) = if B.length secret == B.length untrusted then 0 else 1
+      secretCycle = cycle (B.unpack secret)
+      xorResults = zipWith xor (B.unpack untrusted) secretCycle
+  in 0 == foldl' (.|.) initialResult xorResults
 
 --------------------------------------------------------------------------------
 -- | Decrypt an encrypted message. Please be aware that this is a user-friendly
@@ -116,11 +139,14 @@ decrypt :: ByteString -> ByteString -> ByteString
 decrypt input pwd =
   let (rawHdr, rest) = B.splitAt 34 input
       -- remove the hmac at the end of the file
-      (toDecrypt, _) = B.splitAt (B.length rest - 32) rest
+      (cipherText, msgHMAC) = B.splitAt (B.length rest - 32) rest
       hdr = parseHeader rawHdr
       ctx = newRNCryptorContext pwd hdr
-      clearText = decryptCBC (ctxCipher ctx) (aesIV_ . rncIV . ctxHeader $ ctx) toDecrypt
-  in  removePaddingSymbols clearText
+      clearText = decryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
+      hmac = makeHMAC (rncHMACSalt . ctxHeader $ ctx) pwd $ rawHdr <> cipherText
+  in case consistentTimeEqual msgHMAC hmac of
+       True  -> removePaddingSymbols clearText
+       False -> error (show $ InvalidHMACException msgHMAC hmac)
 
 
 --------------------------------------------------------------------------------
@@ -135,9 +161,13 @@ decryptStream :: ByteString
 decryptStream userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
-  let ctx = newRNCryptorContext userKey hdr
-  processStream ctx inS outS decryptBlock finaliseDecryption
+      ctx = newRNCryptorContext userKey hdr
+      ctx' = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) rawHdr }
+  processStream ctx' inS outS decryptBlock finaliseDecryption
   where
     finaliseDecryption lastBlock ctx = do
-      let (rest, _) = B.splitAt (B.length lastBlock - 32) lastBlock --strip the hmac
-      S.write (Just $ removePaddingSymbols (snd $ decryptBlock ctx rest)) outS
+      let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
+          (ctx', clearText)     = decryptBlock ctx cipherText
+          hmac = convert $ finalize (ctxHMACCtx ctx')
+      unless (consistentTimeEqual msgHMAC hmac) (throwIO $ InvalidHMACException msgHMAC hmac)
+      S.write (Just $ removePaddingSymbols clearText) outS

@@ -1,7 +1,6 @@
-resolver: lts-3.14
+resolver: lts-6.5
 system-ghc: false
 install-ghc: true
 packages:
 - '.'
 extra-deps:
-  - pbkdf-1.1.1.1
