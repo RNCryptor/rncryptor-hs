@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 module Crypto.RNCryptor.Types
      ( RNCryptorException(..)
      , RNCryptorHeader(..)
