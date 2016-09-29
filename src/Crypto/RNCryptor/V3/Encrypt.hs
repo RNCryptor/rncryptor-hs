@@ -35,7 +35,7 @@ encryptBlock ctx clearText =
   let cipherText = encryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
       !newHmacCtx = update (ctxHMACCtx ctx) cipherText
       !sz         = B.length clearText
-      !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) clearText }
+      !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) cipherText }
       in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHmacCtx }, cipherText)
 
 --------------------------------------------------------------------------------
