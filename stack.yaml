@@ -1,6 +1,8 @@
 resolver: lts-6.5
-system-ghc: false
 install-ghc: true
+flags: {}
 packages:
 - '.'
+system-ghc: false
 extra-deps:
+- bytestring-arbitrary-0.1.0

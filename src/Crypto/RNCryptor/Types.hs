@@ -4,7 +4,6 @@ module Crypto.RNCryptor.Types
      ( RNCryptorException(..)
      , RNCryptorHeader(..)
      , RNCryptorContext(ctxHeader, ctxHMACCtx, ctxCipher)
-     , UserInput(..)
      , newRNCryptorContext
      , newRNCryptorHeader
      , renderRNCryptorHeader
@@ -14,17 +13,17 @@ module Crypto.RNCryptor.Types
 
 import           Control.Applicative
 import           Control.Monad
-import           Crypto.Cipher.AES      (AES256)
-import           Crypto.Cipher.Types    (Cipher(..))
-import           Crypto.Error           (CryptoFailable(..))
-import           Control.Exception      (Exception)
-import           Crypto.Hash            (Digest(..))
-import           Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
-import           Crypto.Hash.IO         (HashAlgorithm(..))
-import           Crypto.KDF.PBKDF2      (generate, prfHMAC, Parameters(..))
-import           Crypto.MAC.HMAC        (HMAC(..), Context, initialize, hmac)
-import           Data.ByteArray         (ByteArray, convert)
-import           Data.ByteString        (cons, ByteString, unpack)
+import           Crypto.Cipher.AES         (AES256)
+import           Crypto.Cipher.Types       (Cipher(..))
+import           Crypto.Error              (CryptoFailable(..))
+import           Control.Exception         (Exception)
+import           Crypto.Hash               (Digest(..))
+import           Crypto.Hash.Algorithms    (SHA1(..), SHA256(..))
+import           Crypto.Hash.IO            (HashAlgorithm(..))
+import           Crypto.KDF.PBKDF2         (generate, prfHMAC, Parameters(..))
+import           Crypto.MAC.HMAC           (HMAC(..), Context, initialize, hmac)
+import           Data.ByteArray            (ByteArray, convert)
+import           Data.ByteString           (cons, ByteString, unpack)
 import qualified Data.ByteString.Char8 as C8
 import           Data.Monoid
 import           Data.Typeable
@@ -135,11 +134,6 @@ data RNCryptorContext = RNCryptorContext {
       , ctxCipher  :: AES256
       , ctxHMACCtx :: Context SHA256
       }
-
-newtype UserInput = UI { unInput :: ByteString } deriving Show
-
-instance Arbitrary UserInput where
-  arbitrary = UI . C8.pack <$> arbitrary
 
 --------------------------------------------------------------------------------
 cipherInitNoError :: ByteString -> AES256
