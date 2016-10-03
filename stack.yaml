@@ -6,4 +6,3 @@ packages:
 system-ghc: false
 extra-deps:
 - bytestring-arbitrary-0.1.0
-- text-1.2.2.1
