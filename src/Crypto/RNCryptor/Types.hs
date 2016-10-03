@@ -4,8 +4,6 @@ module Crypto.RNCryptor.Types
      ( RNCryptorException(..)
      , RNCryptorHeader(..)
      , RNCryptorContext(ctxHeader, ctxHMACCtx, ctxCipher)
-     , UserInput(..)
-     , UserInput10M(..)
      , newRNCryptorContext
      , newRNCryptorHeader
      , renderRNCryptorHeader
@@ -26,7 +24,6 @@ import           Crypto.KDF.PBKDF2         (generate, prfHMAC, Parameters(..))
 import           Crypto.MAC.HMAC           (HMAC(..), Context, initialize, hmac)
 import           Data.ByteArray            (ByteArray, convert)
 import           Data.ByteString           (cons, ByteString, unpack)
-import           Data.ByteString.Arbitrary (ArbByteString10M)
 import qualified Data.ByteString.Char8 as C8
 import           Data.Monoid
 import           Data.Typeable
@@ -137,16 +134,6 @@ data RNCryptorContext = RNCryptorContext {
       , ctxCipher  :: AES256
       , ctxHMACCtx :: Context SHA256
       }
-
-newtype UserInput = UI { unInput :: ByteString } deriving Show
-
-instance Arbitrary UserInput where
-  arbitrary = UI . C8.pack <$> arbitrary
-
-newtype UserInput10M = UI10M { unInput10M :: ArbByteString10M } deriving Show
-
-instance Arbitrary UserInput10M where
-  arbitrary = UI10M <$> arbitrary
 
 --------------------------------------------------------------------------------
 cipherInitNoError :: ByteString -> AES256

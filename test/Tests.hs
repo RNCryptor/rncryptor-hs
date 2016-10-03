@@ -8,6 +8,7 @@ import Test.Tasty.HUnit
 import Crypto.RNCryptor.V3
 import Control.Applicative
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as C8
 import Data.ByteString.Arbitrary
 import System.IO.Streams.List
 import System.IO.Streams.ByteString
@@ -16,6 +17,16 @@ newtype TestVector = TV (UserInput, UserInput, RNCryptorHeader) deriving Show
 
 instance Arbitrary TestVector where
   arbitrary = TV <$> ((,,) <$> arbitrary <*> arbitrary <*> arbitrary)
+
+newtype UserInput = UI { unInput :: B.ByteString } deriving Show
+
+instance Arbitrary UserInput where
+  arbitrary = UI . C8.pack <$> arbitrary
+
+newtype UserInput10M = UI10M { unInput10M :: ArbByteString10M } deriving Show
+
+instance Arbitrary UserInput10M where
+  arbitrary = UI10M <$> arbitrary
 
 testEncryptDecryptRoundtrip :: Property
 testEncryptDecryptRoundtrip =
@@ -26,7 +37,7 @@ testEncryptDecryptRoundtrip =
         encrypted = encrypt ctx (unInput input)
     in decrypt encrypted (unInput pwd) == unInput input
 
-streamingRoundTrip :: B.ByteString -> B.ByteString -> IO (B.ByteString)
+streamingRoundTrip :: B.ByteString -> B.ByteString -> IO B.ByteString
 streamingRoundTrip key plainText = do
   plainTextInS                      <- fromByteString plainText
   (cipherTextOutS, flushCipherText) <- listOutputStream
@@ -41,7 +52,7 @@ streamingRoundTrip key plainText = do
 testStreamingEncryptDecryptRoundtrip :: UserInput -> UserInput10M -> Property
 testStreamingEncryptDecryptRoundtrip pwd input = M.monadicIO $ do
   input' <- M.run (streamingRoundTrip (unInput pwd) (fromABS10M (unInput10M input)))
-  M.assert ((fromABS10M (unInput10M input)) == input')
+  M.assert (fromABS10M (unInput10M input) == input')
 
 --------------------------------------------------------------------------------
 -- See: https://github.com/RNCryptor/rncryptor-hs/issues/11
