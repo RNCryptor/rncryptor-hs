@@ -28,6 +28,7 @@ newtype UserInput10M = UI10M { unInput10M :: ArbByteString10M } deriving Show
 instance Arbitrary UserInput10M where
   arbitrary = UI10M <$> arbitrary
 
+--------------------------------------------------------------------------------
 testEncryptDecryptRoundtrip :: Property
 testEncryptDecryptRoundtrip =
   forAll arbitrary $ \(TV (input,pwd,hdr)) ->
@@ -35,8 +36,9 @@ testEncryptDecryptRoundtrip =
     B.length (unInput pwd) > 0 ==>
     let ctx = newRNCryptorContext (unInput pwd) hdr
         encrypted = encrypt ctx (unInput input)
-    in decrypt encrypted (unInput pwd) == unInput input
+    in decrypt encrypted (unInput pwd) == Right (unInput input)
 
+--------------------------------------------------------------------------------
 streamingRoundTrip :: B.ByteString -> B.ByteString -> IO B.ByteString
 streamingRoundTrip key plainText = do
   plainTextInS                      <- fromByteString plainText
@@ -49,6 +51,7 @@ streamingRoundTrip key plainText = do
   plainTexts                        <- flushPlainText
   return $ B.concat plainTexts
 
+--------------------------------------------------------------------------------
 testStreamingEncryptDecryptRoundtrip :: UserInput -> UserInput10M -> Property
 testStreamingEncryptDecryptRoundtrip pwd input = M.monadicIO $ do
   input' <- M.run (streamingRoundTrip (unInput pwd) (fromABS10M (unInput10M input)))
@@ -67,7 +70,4 @@ testForeignEncryption = do
                               ,  179,206,223,169,158,86,9,155,172
                               ]
   let swiftPassword = B.pack [112,97,115,115,119,111,114,100]
-  decrypt swiftEncrypted swiftPassword @=? "01"
-
-
-  
+  decrypt swiftEncrypted swiftPassword @=? Right "01"

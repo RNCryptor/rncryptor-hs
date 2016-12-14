@@ -36,7 +36,7 @@ data RNCryptorException =
   InvalidHMACException !ByteString !ByteString
   -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
   -- second the computed one.
-  deriving Typeable
+  deriving (Typeable, Eq)
 
 instance Show RNCryptorException where
   show (InvalidHMACException untrusted computed) = "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
