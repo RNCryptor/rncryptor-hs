@@ -15,6 +15,7 @@ encrypted file format by Rob Napier.
 # Contributors (Sorted by name)
 - Alfredo Di Napoli (creator and maintainer)
 - Rob Napier (gave me the key insight to use the previous cipher text as IV for the new block)
+- Tim Docker (Added decryptEither and gave us momentum in turning decrypt into a total function)
 - Tom Titchener (added support for HMAC validation)
 
 # Contributions

@@ -135,16 +135,10 @@ consistentTimeEqual untrusted secret =
 -- but dangerous function, in the sense that it will load the *ENTIRE* input in
 -- memory. It's mostly suitable for small inputs like passwords. For large
 -- inputs, where size exceeds the available memory, please use 'decryptStream'.
--- On failure, calls `Prelude.error` with a error message, aborting the pure
--- computation.
-decrypt :: ByteString -> ByteString -> ByteString
-decrypt input pwd = either (error . show) id (decryptEither input pwd)
-
---------------------------------------------------------------------------------
--- | Decrypt an encrypted message. Returns either the reason for failure, or
--- the successfully decrypted message.
-decryptEither :: ByteString -> ByteString -> Either RNCryptorException ByteString
-decryptEither input pwd =
+--
+-- Returns either the reason for failure, or the successfully decrypted message.
+decrypt :: ByteString -> ByteString -> Either RNCryptorException ByteString
+decrypt input pwd =
   let (rawHdr, rest) = B.splitAt 34 input
       -- remove the hmac at the end of the file
       (cipherText, msgHMAC) = B.splitAt (B.length rest - 32) rest
