@@ -5,4 +5,4 @@ packages:
 - '.'
 system-ghc: false
 extra-deps:
-- bytestring-arbitrary-0.1.0
+- bytestring-arbitrary-0.1.1
