@@ -69,19 +69,15 @@ matrix:
     compiler: ": #stack default"
     addons: {apt: {packages: [libgmp-dev]}}
 
-  - env: BUILD=stack ARGS="--resolver lts-2"
+  - env: BUILD=stack STACK_YAML=stack-7.8.yaml
     compiler: ": #stack 7.8.4"
     addons: {apt: {packages: [libgmp-dev]}}
 
-  - env: BUILD=stack ARGS="--resolver lts-3"
-    compiler: ": #stack 7.10.2"
-    addons: {apt: {packages: [libgmp-dev]}}
-
-  - env: BUILD=stack ARGS="--resolver lts-6"
+  - env: BUILD=stack STACK_YAML=stack-7.10.yaml
     compiler: ": #stack 7.10.3"
     addons: {apt: {packages: [libgmp-dev]}}
 
-  - env: BUILD=stack ARGS="--resolver lts-7"
+  - env: BUILD=stack STACK_YAML=stack-8.0.yaml
     compiler: ": #stack 8.0.1"
     addons: {apt: {packages: [libgmp-dev]}}
 
