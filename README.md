@@ -1,5 +1,6 @@
 [![Build Status](https://travis-ci.org/RNCryptor/rncryptor-hs.svg?branch=master)](https://travis-ci.org/RNCryptor/rncryptor-hs)
 [![Build status](https://ci.appveyor.com/api/projects/status/vj3d35qptms3q23w?svg=true)](https://ci.appveyor.com/project/adinapoli/rncryptor-hs)
+[![Coverage Status](https://coveralls.io/repos/github/RNCryptor/rncryptor-hs/badge.svg?branch=master)](https://coveralls.io/github/RNCryptor/rncryptor-hs?branch=master)
 
 # Haskell Implementation of the RNCryptor spec
 This library implements the specification for the [RNCryptor](https://github.com/RNCryptor)
