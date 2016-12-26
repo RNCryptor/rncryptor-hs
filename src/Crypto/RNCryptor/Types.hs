@@ -6,30 +6,40 @@ module Crypto.RNCryptor.Types
      , RNCryptorContext(ctxHeader, ctxHMACCtx, ctxCipher)
      , newRNCryptorContext
      , newRNCryptorHeader
+     , newRNCryptorHeaderFrom
      , renderRNCryptorHeader
      , makeHMAC
      , blockSize
+     -- * Type synonyms to make the API more descriptive
+     , Password
+     , HMAC
+     , Salt
+     , EncryptionKey
+     , EncryptionSalt
+     , HMACSalt
+     , IV
      ) where
 
 import           Control.Applicative
+import           Control.Exception (Exception)
 import           Control.Monad
-import           Crypto.Cipher.AES         (AES256)
-import           Crypto.Cipher.Types       (Cipher(..))
-import           Crypto.Error              (CryptoFailable(..))
-import           Control.Exception         (Exception)
-import           Crypto.Hash               (Digest(..))
-import           Crypto.Hash.Algorithms    (SHA1(..), SHA256(..))
-import           Crypto.Hash.IO            (HashAlgorithm(..))
-import           Crypto.KDF.PBKDF2         (generate, prfHMAC, Parameters(..))
-import           Crypto.MAC.HMAC           (HMAC(..), Context, initialize, hmac)
-import           Data.ByteArray            (ByteArray, convert)
-import           Data.ByteString           (cons, ByteString, unpack)
+import           Crypto.Cipher.AES (AES256)
+import           Crypto.Cipher.Types (Cipher(..))
+import           Crypto.Error (CryptoFailable(..))
+import           Crypto.Hash (Digest(..))
+import           Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
+import           Crypto.Hash.IO (HashAlgorithm(..))
+import           Crypto.KDF.PBKDF2 (generate, prfHMAC, Parameters(..))
+import           Crypto.MAC.HMAC (Context, initialize, hmac)
+import qualified Crypto.MAC.HMAC as Crypto
+import           Data.ByteArray (ByteArray, convert)
+import           Data.ByteString (cons, ByteString, unpack)
 import qualified Data.ByteString.Char8 as C8
 import           Data.Monoid
 import           Data.Typeable
 import           Data.Word
 import           System.Random
-import           Test.QuickCheck        (Arbitrary(..), vector)
+import           Test.QuickCheck (Arbitrary(..), vector)
 
 
 data RNCryptorException =
@@ -39,22 +49,30 @@ data RNCryptorException =
   deriving (Typeable, Eq)
 
 instance Show RNCryptorException where
-  show (InvalidHMACException untrusted computed) = "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
-                                                 <> ", but the computed one is " <> show (unpack computed) <> "."
+  show (InvalidHMACException untrusted computed) =
+    "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
+                                                <> ", but the computed one is " <> show (unpack computed) <> "."
 
 instance Exception RNCryptorException
 
+type Password = ByteString
+type HMAC = ByteString
+type EncryptionKey = ByteString
+type Salt = ByteString
+type EncryptionSalt = Salt
+type HMACSalt = Salt
+type IV = ByteString
 
 data RNCryptorHeader = RNCryptorHeader {
         rncVersion :: !Word8
       -- ^ Data format version. Currently 3.
       , rncOptions :: !Word8
       -- ^ bit 0 - uses password
-      , rncEncryptionSalt :: !ByteString
+      , rncEncryptionSalt :: !EncryptionSalt
       -- ^ iff option includes "uses password"
-      , rncHMACSalt :: !ByteString
+      , rncHMACSalt :: !HMACSalt
       -- ^ iff options includes "uses password"
-      , rncIV :: !ByteString
+      , rncIV :: !IV
       -- ^ The initialisation vector
       -- The ciphertext is variable and encrypted in CBC mode
       }
@@ -94,12 +112,12 @@ makeKey :: ByteString -> ByteString -> ByteString
 makeKey = generate (prfHMAC SHA1) (Parameters 10000 32)
 
 --------------------------------------------------------------------------------
-makeHMAC :: ByteString -> ByteString -> ByteString -> ByteString
+makeHMAC :: ByteString -> Password -> ByteString -> HMAC
 makeHMAC hmacSalt userKey secret =
   let key        = makeKey userKey hmacSalt
       hmacSha256 = hmac key secret
   in
-      convert (hmacSha256 :: HMAC SHA256)
+      convert (hmacSha256 :: Crypto.HMAC SHA256)
 
 --------------------------------------------------------------------------------
 -- | Generates a new 'RNCryptorHeader', suitable for encryption.
@@ -111,6 +129,19 @@ newRNCryptorHeader = do
   iv       <- randomSaltIO blockSize
   hmacSalt <- randomSaltIO saltSize
   return RNCryptorHeader {
+        rncVersion = version
+      , rncOptions = options
+      , rncEncryptionSalt = eSalt
+      , rncHMACSalt = hmacSalt
+      , rncIV = iv
+      }
+
+--------------------------------------------------------------------------------
+newRNCryptorHeaderFrom :: EncryptionSalt -> HMACSalt -> IV -> RNCryptorHeader
+newRNCryptorHeaderFrom eSalt hmacSalt iv = do
+  let version = toEnum 3
+  let options = toEnum 1
+  RNCryptorHeader {
         rncVersion = version
       , rncOptions = options
       , rncEncryptionSalt = eSalt
@@ -142,7 +173,7 @@ cipherInitNoError k = case cipherInit k of
   CryptoFailed e -> error ("cipherInitNoError: " <> show e)
 
 --------------------------------------------------------------------------------
-newRNCryptorContext :: ByteString -> RNCryptorHeader -> RNCryptorContext
+newRNCryptorContext :: Password -> RNCryptorHeader -> RNCryptorContext
 newRNCryptorContext userKey hdr =
   let hmacSalt = rncHMACSalt hdr
       hmacKey  = makeKey userKey hmacSalt

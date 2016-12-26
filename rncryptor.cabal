@@ -1,5 +1,5 @@
 name:                rncryptor
-version:             0.2.0.0
+version:             0.3.0.0
 synopsis:            Haskell implementation of the RNCryptor file format
 description:         Pure Haskell implementation of the RNCrytor spec.
 license:             MIT
@@ -45,8 +45,8 @@ test-suite rncryptor-tests
     exitcode-stdio-1.0
   main-is:
     Main.hs
-  other-modules:
-    Tests
+  other-modules: Tests
+                 PasswordBasedVectors
   hs-source-dirs:
     test
   default-language:
@@ -60,6 +60,9 @@ test-suite rncryptor-tests
     , tasty-quickcheck
     , tasty-hunit
     , io-streams
+    , base16-bytestring
+    , cryptonite
+    , text
     , bytestring-arbitrary >= 0.1.0
 
 executable rncryptor-decrypt
