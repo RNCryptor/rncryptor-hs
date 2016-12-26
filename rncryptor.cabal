@@ -96,3 +96,16 @@ executable rncryptor-encrypt
     Haskell2010
   ghc-options:
     -funbox-strict-fields
+
+benchmark store-bench
+  type: exitcode-stdio-1.0
+  main-is: Bench.hs
+  hs-source-dirs:
+      bench
+  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -O2 -threaded -rtsopts -with-rtsopts=-N1 -with-rtsopts=-s -with-rtsopts=-qg
+  build-depends:
+      base >=4.7 && <5
+    , bytestring >= 0.10.4.0
+    , criterion
+    , rncryptor
+  default-language: Haskell2010
