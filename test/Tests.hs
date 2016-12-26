@@ -2,16 +2,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Tests where
 
-import Test.Tasty.QuickCheck
-import qualified Test.QuickCheck.Monadic as M
-import Test.Tasty.HUnit
-import Crypto.RNCryptor.V3
-import Control.Applicative
+import           Control.Applicative
+import           Crypto.RNCryptor.V3
 import qualified Data.ByteString as B
+import           Data.ByteString.Arbitrary
 import qualified Data.ByteString.Char8 as C8
-import Data.ByteString.Arbitrary
-import System.IO.Streams.List
-import System.IO.Streams.ByteString
+import           Data.Word
+import           System.IO.Streams.ByteString
+import           System.IO.Streams.List
+import qualified Test.QuickCheck.Monadic as M
+import           Test.Tasty.HUnit
+import           Test.Tasty.QuickCheck
 
 newtype TestVector = TV (UserInput, UserInput, RNCryptorHeader) deriving Show
 

@@ -10,8 +10,8 @@ encrypted file format by Rob Napier.
 * V3 - [Spec](https://github.com/RNCryptor/RNCryptor-Spec/blob/master/RNCryptor-Spec-v3.md)
 
 # TODO
-- [X] HMAC Validation
-- [ ] Test vectors testing
+- [ ] Key-based      test vectors
+- [ ] Key-derivation test vectors
 - [ ] Profiling & optimisations
 
 # Contributors (Sorted by name)

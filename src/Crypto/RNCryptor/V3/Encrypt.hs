@@ -3,6 +3,7 @@ module Crypto.RNCryptor.V3.Encrypt
   ( encrypt
   , encryptBlock
   , encryptStream
+  , encryptStreamWithContext
   ) where
 
 import           Crypto.Cipher.AES          (AES256)
@@ -21,7 +22,7 @@ import qualified System.IO.Streams as S
 encryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
 encryptBytes a iv = cbcEncrypt a iv'
   where
-    iv' = fromMaybe (error "encryptBytes: makeIV failed.") $ makeIV iv
+    iv' = fromMaybe (error $ "encryptBytes: makeIV failed (iv was: " <> show (B.unpack iv) <> ")") $ makeIV iv
 
 --------------------------------------------------------------------------------
 -- | Encrypt a raw Bytestring block. The function returns the encrypt text block
@@ -31,7 +32,7 @@ encryptBytes a iv = cbcEncrypt a iv'
 encryptBlock :: RNCryptorContext
              -> ByteString
              -> (RNCryptorContext, ByteString)
-encryptBlock ctx clearText = 
+encryptBlock ctx clearText =
   let cipherText = encryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
       !newHmacCtx = update (ctxHMACCtx ctx) cipherText
       !sz         = B.length clearText
@@ -53,7 +54,25 @@ encrypt ctx input =
 
 --------------------------------------------------------------------------------
 -- | Efficiently encrypt an incoming stream of bytes.
-encryptStream :: ByteString
+encryptStreamWithContext :: RNCryptorContext
+                         -- ^ The RNCryptorContext
+                         -> S.InputStream ByteString
+                         -- ^ The input source (mostly likely stdin)
+                         -> S.OutputStream ByteString
+                         -- ^ The output source (mostly likely stdout)
+                         -> IO ()
+encryptStreamWithContext ctx inS outS = do
+  S.write (Just (renderRNCryptorHeader $ ctxHeader ctx)) outS
+  processStream ctx inS outS encryptBlock finaliseEncryption
+  where
+    finaliseEncryption lastBlock lastCtx = do
+      let (ctx', cipherText) = encryptBlock lastCtx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
+      S.write (Just cipherText) outS
+      S.write (Just (convert $ finalize (ctxHMACCtx ctx'))) outS
+
+--------------------------------------------------------------------------------
+-- | Efficiently encrypt an incoming stream of bytes.
+encryptStream :: Password
               -- ^ The user key (e.g. password)
               -> S.InputStream ByteString
               -- ^ The input source (mostly likely stdin)
@@ -65,10 +84,4 @@ encryptStream userKey inS outS = do
   let ctx     = newRNCryptorContext userKey hdr
       msgHdr  = renderRNCryptorHeader hdr
       ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
-  S.write (Just msgHdr) outS
-  processStream ctx' inS outS encryptBlock finaliseEncryption
-  where
-    finaliseEncryption lastBlock ctx = do
-      let (ctx', cipherText) = encryptBlock ctx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
-      S.write (Just cipherText) outS
-      S.write (Just (convert $ finalize (ctxHMACCtx ctx'))) outS
+  encryptStreamWithContext ctx' inS outS
