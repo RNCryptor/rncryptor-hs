@@ -11,6 +11,10 @@ build-type:          Simple
 tested-with:         GHC == 7.6, GHC == 7.8
 cabal-version:       >=1.10
 
+flag fastpbkdf2
+     description: Use fastpbkdf2 instead of cryptonite for PBKDF2.
+     default: False
+
 source-repository head
   type:     git
   location: https://github.com/adinapoli/rncryptor-hs
@@ -33,6 +37,9 @@ library
     , io-streams >= 1.2.0.0
     , cryptonite >= 0.15
     , memory
+  if flag(fastpbkdf2)
+    build-depends: fastpbkdf2
+    cpp-options:  -DFASTPBKDF2
   hs-source-dirs:
     src
   default-language:

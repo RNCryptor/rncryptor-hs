@@ -12,7 +12,6 @@ encrypted file format by Rob Napier.
 # TODO
 - [ ] Key-based      test vectors
 - [ ] Key-derivation test vectors
-- [ ] Profiling & optimisations
 
 # Contributors (Sorted by name)
 - Alfredo Di Napoli (creator and maintainer)
