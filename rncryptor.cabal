@@ -11,6 +11,10 @@ build-type:          Simple
 tested-with:         GHC == 7.6, GHC == 7.8
 cabal-version:       >=1.10
 
+flag fastpbkdf2
+     description: Use fastpbkdf2 instead of cryptonite for PBKDF2.
+     default: True
+
 source-repository head
   type:     git
   location: https://github.com/adinapoli/rncryptor-hs
@@ -33,6 +37,9 @@ library
     , io-streams >= 1.2.0.0
     , cryptonite >= 0.15
     , memory
+  if flag(fastpbkdf2)
+    build-depends: fastpbkdf2
+    cpp-options:  -DFASTPBKDF2
   hs-source-dirs:
     src
   default-language:
@@ -96,3 +103,16 @@ executable rncryptor-encrypt
     Haskell2010
   ghc-options:
     -funbox-strict-fields
+
+benchmark store-bench
+  type: exitcode-stdio-1.0
+  main-is: Bench.hs
+  hs-source-dirs:
+      bench
+  ghc-options: -Wall -fwarn-tabs -fwarn-incomplete-uni-patterns -fwarn-incomplete-record-updates -O2 -threaded -rtsopts -with-rtsopts=-N1 -with-rtsopts=-s -with-rtsopts=-qg
+  build-depends:
+      base >=4.6 && <5
+    , bytestring >= 0.10.4.0
+    , criterion
+    , rncryptor
+  default-language: Haskell2010

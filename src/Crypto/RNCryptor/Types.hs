@@ -1,4 +1,6 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 module Crypto.RNCryptor.Types
      ( RNCryptorException(..)
@@ -20,26 +22,30 @@ module Crypto.RNCryptor.Types
      , IV
      ) where
 
-import           Control.Applicative
-import           Control.Exception (Exception)
-import           Control.Monad
-import           Crypto.Cipher.AES (AES256)
-import           Crypto.Cipher.Types (Cipher(..))
-import           Crypto.Error (CryptoFailable(..))
-import           Crypto.Hash (Digest(..))
-import           Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
-import           Crypto.Hash.IO (HashAlgorithm(..))
-import           Crypto.KDF.PBKDF2 (generate, prfHMAC, Parameters(..))
-import           Crypto.MAC.HMAC (Context, initialize, hmac)
-import qualified Crypto.MAC.HMAC as Crypto
-import           Data.ByteArray (ByteArray, convert)
-import           Data.ByteString (cons, ByteString, unpack)
-import qualified Data.ByteString.Char8 as C8
-import           Data.Monoid
-import           Data.Typeable
-import           Data.Word
-import           System.Random
-import           Test.QuickCheck (Arbitrary(..), vector)
+import              Control.Applicative
+import              Control.Exception (Exception)
+import              Control.Monad
+import              Crypto.Cipher.AES (AES256)
+import              Crypto.Cipher.Types (Cipher(..))
+import              Crypto.Error (CryptoFailable(..))
+import              Crypto.Hash (Digest(..))
+import              Crypto.Hash.Algorithms (SHA1(..), SHA256(..))
+import              Crypto.Hash.IO (HashAlgorithm(..))
+#if FASTPBKDF2
+import "fastpbkdf2" Crypto.KDF.PBKDF2 (fastpbkdf2_hmac_sha1)
+#else
+import "cryptonite" Crypto.KDF.PBKDF2
+#endif
+import              Crypto.MAC.HMAC (Context, initialize, hmac)
+import qualified    Crypto.MAC.HMAC as Crypto
+import              Data.ByteArray (ByteArray, convert)
+import              Data.ByteString (cons, ByteString, unpack)
+import qualified    Data.ByteString.Char8 as C8
+import              Data.Monoid
+import              Data.Typeable
+import              Data.Word
+import              System.Random
+import              Test.QuickCheck (Arbitrary(..), vector)
 
 
 data RNCryptorException =
@@ -109,7 +115,11 @@ randomSaltIO sz = C8.pack <$> forM [1 .. sz] (const $ randomRIO ('\NUL', '\255')
 
 --------------------------------------------------------------------------------
 makeKey :: ByteString -> ByteString -> ByteString
+#if FASTPBKDF2
+makeKey input salt = fastpbkdf2_hmac_sha1 input salt 10000 32
+#else
 makeKey = generate (prfHMAC SHA1) (Parameters 10000 32)
+#endif
 
 --------------------------------------------------------------------------------
 makeHMAC :: ByteString -> Password -> ByteString -> HMAC
