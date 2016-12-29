@@ -9,6 +9,13 @@ encrypted file format by Rob Napier.
 # Current Supported Versions
 * V3 - [Spec](https://github.com/RNCryptor/RNCryptor-Spec/blob/master/RNCryptor-Spec-v3.md)
 
+# Requirements
+
+The library uses by default a fast C layer to compute the PBKDF2, but that requires the
+presence of the OpenSSL libraries on the target system. In case this is a too rigid
+requirement, you can switch back to a pure (slower) Haskell implementation by
+turning off the `fastpbkdf2` cabal flag.
+
 # TODO
 - [ ] Key-based      test vectors
 - [ ] Key-derivation test vectors
