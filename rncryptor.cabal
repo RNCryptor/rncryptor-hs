@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 
 flag fastpbkdf2
      description: Use fastpbkdf2 instead of cryptonite for PBKDF2.
-     default: False
+     default: True
 
 source-repository head
   type:     git
