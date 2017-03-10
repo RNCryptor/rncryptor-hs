@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Crypto.RNCryptor.V3.Decrypt
   ( parseHeader
@@ -108,13 +109,13 @@ decryptBytes a iv = cbcDecrypt a iv'
 -- for the insight).
 decryptBlock :: RNCryptorContext
              -> ByteString
-             -> (RNCryptorContext, ByteString)
+             -> (# RNCryptorContext, ByteString #)
 decryptBlock ctx cipherText =
   let clearText   = decryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
       !newHMACCtx = update (ctxHMACCtx ctx) cipherText
       !sz         = B.length cipherText
       !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) cipherText }
-      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText)
+      in (# ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText #)
 
 --------------------------------------------------------------------------------
 -- "A consistent time function needs to be clear on which parameter is secret and
@@ -168,7 +169,8 @@ decryptStream userKey inS outS = do
   where
     finaliseDecryption lastBlock ctx = do
       let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
-          (ctx', clearText)     = decryptBlock ctx cipherText
+          (# ctx', clearText #) = decryptBlock ctx cipherText
           hmac = convert $ finalize (ctxHMACCtx ctx')
       unless (consistentTimeEqual msgHMAC hmac) (throwIO $ InvalidHMACException msgHMAC hmac)
       S.write (Just $ removePaddingSymbols clearText) outS
+      S.write (Just mempty) outS

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE UnboxedTuples #-}
 module Crypto.RNCryptor.V3.Encrypt
   ( encrypt
   , encryptBlock
@@ -31,13 +32,13 @@ encryptBytes a iv = cbcEncrypt a iv'
 -- for the insight).
 encryptBlock :: RNCryptorContext
              -> ByteString
-             -> (RNCryptorContext, ByteString)
+             -> (# RNCryptorContext, ByteString #)
 encryptBlock ctx clearText =
   let cipherText = encryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) clearText
       !newHmacCtx = update (ctxHMACCtx ctx) cipherText
       !sz         = B.length clearText
       !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) cipherText }
-      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHmacCtx }, cipherText)
+      in (# ctx { ctxHeader = newHeader, ctxHMACCtx = newHmacCtx }, cipherText #)
 
 --------------------------------------------------------------------------------
 -- | Encrypt a message. Please be aware that this is a user-friendly
@@ -48,7 +49,7 @@ encrypt :: RNCryptorContext -> ByteString -> ByteString
 encrypt ctx input =
   let msgHdr  = renderRNCryptorHeader $ ctxHeader ctx
       ctx'    = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) msgHdr }
-      (ctx'', cipherText) = encryptBlock ctx' (input <> pkcs7Padding blockSize (B.length input))
+      (# ctx'', cipherText #) = encryptBlock ctx' (input <> pkcs7Padding blockSize (B.length input))
       msgHMAC = convert $ finalize (ctxHMACCtx ctx'')
   in msgHdr <> cipherText <> msgHMAC
 
@@ -66,7 +67,7 @@ encryptStreamWithContext ctx inS outS = do
   processStream ctx inS outS encryptBlock finaliseEncryption
   where
     finaliseEncryption lastBlock lastCtx = do
-      let (ctx', cipherText) = encryptBlock lastCtx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
+      let (# ctx', cipherText #) = encryptBlock lastCtx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
       S.write (Just cipherText) outS
       S.write (Just (convert $ finalize (ctxHMACCtx ctx'))) outS
 
