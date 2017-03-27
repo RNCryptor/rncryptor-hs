@@ -1,5 +1,5 @@
 name:                rncryptor
-version:             0.3.0.0
+version:             0.4.0.0
 synopsis:            Haskell implementation of the RNCryptor file format
 description:         Pure Haskell implementation of the RNCrytor spec.
 license:             MIT
@@ -14,6 +14,10 @@ cabal-version:       >=1.10
 flag fastpbkdf2
      description: Use fastpbkdf2 instead of cryptonite for PBKDF2.
      default: True
+
+flag prof
+     description: Enable profiling options.
+     default: False
 
 source-repository head
   type:     git
@@ -31,15 +35,18 @@ library
   build-depends:
       base >=4.6 && < 5
     , bytestring >= 0.9.0
+    , bytestring-tree-builder
     , mtl >= 2.1
     , random >= 1.0.0.1
+    , streaming < 0.2.0.0
     , QuickCheck >= 2.6 && < 2.9
-    , io-streams >= 1.2.0.0
     , cryptonite >= 0.15
     , memory
   if flag(fastpbkdf2)
     build-depends: fastpbkdf2
     cpp-options:  -DFASTPBKDF2
+  if flag(prof)
+   ghc-options: -fprof-auto -rtsopts -auto-all -caf-all
   hs-source-dirs:
     src
   default-language:
@@ -85,6 +92,8 @@ executable rncryptor-decrypt
     StreamingDecrypter.hs
   default-language:
     Haskell2010
+  if flag(prof)
+   ghc-options: -fprof-auto -rtsopts -auto-all -caf-all
   ghc-options:
     -funbox-strict-fields
 

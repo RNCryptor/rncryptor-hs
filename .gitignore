@@ -4,3 +4,5 @@ cabal.sandbox.config
 shell.nix
 cabal.config
 .stack-work
+test.sh
+*.prof

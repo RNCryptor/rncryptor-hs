@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Crypto.RNCryptor.V3.Decrypt
   ( parseHeader
@@ -7,22 +8,22 @@ module Crypto.RNCryptor.V3.Decrypt
   , decryptStream
   ) where
 
+import           Control.Exception (throwIO)
 import           Control.Monad.State
-import           Control.Exception           (throwIO)
-import           Crypto.Cipher.AES           (AES256)
-import           Crypto.Cipher.Types         (IV, makeIV, BlockCipher, cbcDecrypt)
-import           Crypto.MAC.HMAC             (update, finalize)
+import           Crypto.Cipher.AES (AES256)
+import           Crypto.Cipher.Types (IV, makeIV, BlockCipher, cbcDecrypt)
+import           Crypto.MAC.HMAC (update, finalize)
 import           Crypto.RNCryptor.Types
 import           Crypto.RNCryptor.V3.Stream
-import           Data.Bits                   (xor, (.|.))
-import           Data.ByteArray              (convert)
-import           Data.ByteString             (ByteString)
+import           Data.Bits (xor, (.|.))
+import           Data.ByteArray (convert)
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import           Data.Foldable
-import           Data.Maybe                  (fromMaybe)
+import           Data.Maybe (fromMaybe)
 import           Data.Monoid
 import           Data.Word
-import qualified System.IO.Streams as S
+import           System.IO
 
 --------------------------------------------------------------------------------
 -- | Parse the input 'ByteString' to extract the 'RNCryptorHeader', as
@@ -108,13 +109,13 @@ decryptBytes a iv = cbcDecrypt a iv'
 -- for the insight).
 decryptBlock :: RNCryptorContext
              -> ByteString
-             -> (RNCryptorContext, ByteString)
+             -> (# RNCryptorContext, ByteString #)
 decryptBlock ctx cipherText =
   let clearText   = decryptBytes (ctxCipher ctx) (rncIV . ctxHeader $ ctx) cipherText
       !newHMACCtx = update (ctxHMACCtx ctx) cipherText
       !sz         = B.length cipherText
       !newHeader  = (ctxHeader ctx) { rncIV = B.drop (sz - 16) cipherText }
-      in (ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText)
+      in (# ctx { ctxHeader = newHeader, ctxHMACCtx = newHMACCtx }, clearText #)
 
 --------------------------------------------------------------------------------
 -- "A consistent time function needs to be clear on which parameter is secret and
@@ -154,13 +155,13 @@ decrypt input pwd =
 -- | Efficiently decrypts an incoming stream of bytes.
 decryptStream :: ByteString
               -- ^ The user key (e.g. password)
-              -> S.InputStream ByteString
+              -> Handle
               -- ^ The input source (mostly likely stdin)
-              -> S.OutputStream ByteString
+              -> Handle
               -- ^ The output source (mostly likely stdout)
               -> IO ()
 decryptStream userKey inS outS = do
-  rawHdr <- S.readExactly 34 inS
+  rawHdr <- B.hGet inS 34
   let hdr = parseHeader rawHdr
       ctx = newRNCryptorContext userKey hdr
       ctx' = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) rawHdr }
@@ -168,7 +169,8 @@ decryptStream userKey inS outS = do
   where
     finaliseDecryption lastBlock ctx = do
       let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
-          (ctx', clearText)     = decryptBlock ctx cipherText
+          (# ctx', clearText #) = decryptBlock ctx cipherText
           hmac = convert $ finalize (ctxHMACCtx ctx')
       unless (consistentTimeEqual msgHMAC hmac) (throwIO $ InvalidHMACException msgHMAC hmac)
-      S.write (Just $ removePaddingSymbols clearText) outS
+      B.hPut outS (removePaddingSymbols clearText)
+      hFlush outS
