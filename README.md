@@ -9,6 +9,11 @@ encrypted file format by Rob Napier.
 # Current Supported Versions
 * V3 - [Spec](https://github.com/RNCryptor/RNCryptor-Spec/blob/master/RNCryptor-Spec-v3.md)
 
+# Changelog
+
+* Version 0.4.0.0
+    + Removed `io-streams` dependency in favour of `streaming`
+
 # Requirements
 
 The library uses by default a fast C layer to compute the PBKDF2, but that requires the
