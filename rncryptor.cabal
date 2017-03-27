@@ -38,8 +38,8 @@ library
     , bytestring-tree-builder
     , mtl >= 2.1
     , random >= 1.0.0.1
+    , streaming < 0.2.0.0
     , QuickCheck >= 2.6 && < 2.9
-    , io-streams >= 1.2.0.0
     , cryptonite >= 0.15
     , memory
   if flag(fastpbkdf2)

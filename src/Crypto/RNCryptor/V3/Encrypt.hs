@@ -18,7 +18,7 @@ import           Data.ByteString            (ByteString)
 import qualified Data.ByteString as B
 import           Data.Maybe                 (fromMaybe)
 import           Data.Monoid
-import qualified System.IO.Streams as S
+import System.IO
 
 encryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
 encryptBytes a iv = cbcEncrypt a iv'
@@ -57,27 +57,27 @@ encrypt ctx input =
 -- | Efficiently encrypt an incoming stream of bytes.
 encryptStreamWithContext :: RNCryptorContext
                          -- ^ The RNCryptorContext
-                         -> S.InputStream ByteString
+                         -> Handle
                          -- ^ The input source (mostly likely stdin)
-                         -> S.OutputStream ByteString
+                         -> Handle
                          -- ^ The output source (mostly likely stdout)
                          -> IO ()
 encryptStreamWithContext ctx inS outS = do
-  S.write (Just (renderRNCryptorHeader $ ctxHeader ctx)) outS
+  B.hPut outS (renderRNCryptorHeader $ ctxHeader ctx)
   processStream ctx inS outS encryptBlock finaliseEncryption
   where
     finaliseEncryption lastBlock lastCtx = do
       let (# ctx', cipherText #) = encryptBlock lastCtx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))
-      S.write (Just cipherText) outS
-      S.write (Just (convert $ finalize (ctxHMACCtx ctx'))) outS
+      B.hPut outS cipherText
+      B.hPut outS (convert $ finalize (ctxHMACCtx ctx'))
 
 --------------------------------------------------------------------------------
 -- | Efficiently encrypt an incoming stream of bytes.
 encryptStream :: Password
               -- ^ The user key (e.g. password)
-              -> S.InputStream ByteString
+              -> Handle
               -- ^ The input source (mostly likely stdin)
-              -> S.OutputStream ByteString
+              -> Handle
               -- ^ The output source (mostly likely stdout)
               -> IO ()
 encryptStream userKey inS outS = do
