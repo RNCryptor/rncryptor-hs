@@ -4,3 +4,8 @@ cabal.sandbox.config
 shell.nix
 cabal.config
 .stack-work
+dist
+dist-newstyle
+cabal.project.local
+.cabal.project.local
+tags
