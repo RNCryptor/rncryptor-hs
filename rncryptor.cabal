@@ -1,5 +1,5 @@
 name:                rncryptor
-version:             0.3.0.0
+version:             0.3.0.1
 synopsis:            Haskell implementation of the RNCryptor file format
 description:         Pure Haskell implementation of the RNCrytor spec.
 license:             MIT
