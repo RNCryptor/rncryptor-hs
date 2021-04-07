@@ -53,7 +53,7 @@ parseSingleWord8 err = do
   put vs
   case B.unpack v of
     [x] -> return x
-    _   -> fail err
+    _   -> error err
 
 --------------------------------------------------------------------------------
 parseBSOfSize :: Int -> String -> State ByteString ByteString
@@ -62,7 +62,7 @@ parseBSOfSize sz err = do
   let (v,vs) = B.splitAt sz bs
   put vs
   case B.unpack v of
-    [] -> fail err
+    [] -> error err
     _ -> return v
 
 --------------------------------------------------------------------------------

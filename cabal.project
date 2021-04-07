@@ -1,0 +1,6 @@
+packages: .
+
+allow-newer:
+  bytestring-arbitrary:base
+
+tests: true
