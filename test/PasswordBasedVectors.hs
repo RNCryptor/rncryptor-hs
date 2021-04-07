@@ -27,7 +27,7 @@ data TestVector = TestVector {
 
 --------------------------------------------------------------------------------
 unhex :: ByteString -> ByteString
-unhex = fst . decode
+unhex = decodeLenient
 
 --------------------------------------------------------------------------------
 withTestVector :: TestVector -> Assertion

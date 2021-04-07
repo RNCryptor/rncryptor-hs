@@ -1,5 +1,5 @@
 name:                rncryptor
-version:             0.3.0.1
+version:             0.3.0.2
 synopsis:            Haskell implementation of the RNCryptor file format
 description:         Pure Haskell implementation of the RNCrytor spec.
 license:             MIT
@@ -67,7 +67,7 @@ test-suite rncryptor-tests
     , tasty-quickcheck
     , tasty-hunit
     , io-streams
-    , base16-bytestring
+    , base16-bytestring >= 1.0.0.0
     , cryptonite
     , text
     , bytestring-arbitrary >= 0.1.0
