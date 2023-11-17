@@ -7,6 +7,7 @@ module Crypto.RNCryptor.V3.Decrypt
   , decryptStream
   ) where
 
+import           Control.Monad               (unless)
 import           Control.Monad.State
 import           Control.Exception           (throwIO)
 import           Crypto.Cipher.AES           (AES256)
