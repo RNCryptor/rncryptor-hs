@@ -92,9 +92,12 @@ parseIV = parseBSOfSize 16 "parseIV: not enough bytes."
 -- data = data[:-bord(data[-1])]
 -- https://github.com/RNCryptor/RNCryptor-python/blob/master/RNCryptor.py#L69
 removePaddingSymbols :: ByteString -> ByteString
-removePaddingSymbols input =
-  let lastWord = B.last input
-  in B.take (B.length input - fromEnum lastWord) input
+removePaddingSymbols input
+  | B.null input
+  = input
+  | otherwise
+  = let lastWord = B.last input
+    in B.take (B.length input - fromEnum lastWord) input
 
 --------------------------------------------------------------------------------
 decryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
@@ -171,5 +174,5 @@ decryptStream userKey inS outS = do
       let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
           (ctx', clearText)     = decryptBlock ctx cipherText
           hmac = convert $ finalize (ctxHMACCtx ctx')
-      unless (consistentTimeEqual msgHMAC hmac) (throwIO $ InvalidHMACException msgHMAC hmac)
       S.write (Just $ removePaddingSymbols clearText) outS
+      unless (consistentTimeEqual msgHMAC hmac) (throwIO $ InvalidHMACException msgHMAC hmac)
