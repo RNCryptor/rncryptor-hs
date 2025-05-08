@@ -49,15 +49,17 @@ import              Test.QuickCheck (Arbitrary(..), vector)
 
 
 data RNCryptorException =
-  InvalidHMACException !ByteString !ByteString
-  -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
-  -- second the computed one.
+    InvalidHMACException !ByteString !ByteString
+    -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
+    -- second the computed one.
+  | ImpossibleNoMoreBlocks !ByteString
   deriving (Typeable, Eq)
 
 instance Show RNCryptorException where
   show (InvalidHMACException untrusted computed) =
     "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
                                                 <> ", but the computed one is " <> show (unpack computed) <> "."
+  show (ImpossibleNoMoreBlocks l) = "No more blocks to stream (leftover: " <> showHex l
 
 instance Exception RNCryptorException
 
