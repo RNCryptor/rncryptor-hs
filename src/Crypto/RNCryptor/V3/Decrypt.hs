@@ -93,11 +93,13 @@ parseIV = parseBSOfSize 16 "parseIV: not enough bytes."
 -- https://github.com/RNCryptor/RNCryptor-python/blob/master/RNCryptor.py#L69
 removePaddingSymbols :: ByteString -> ByteString
 removePaddingSymbols input
-  | B.null input
-  = input
-  | otherwise
-  = let lastWord = B.last input
-    in B.take (B.length input - fromEnum lastWord) input
+  | B.null input = input
+  | otherwise =
+      let lastByte = B.last input
+          padLength = fromEnum lastByte
+      in if padLength <= 16 && padLength <= B.length input
+           then B.take (B.length input - padLength) input
+           else input -- Invalid padding byte, return original input
 
 --------------------------------------------------------------------------------
 decryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
