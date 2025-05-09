@@ -7,7 +7,9 @@ module Crypto.RNCryptor.V3.Decrypt
   , decrypt
   , decryptBlock
   , decryptStream
+  , decryptStreamWith
   , decryptStreamLenient
+  , OnHMACFailure(..)
   ) where
 
 import           Control.Exception           (throwIO, Exception (..))
@@ -166,6 +168,7 @@ data OnHMACFailure
   = OHF_abort
   -- | Not recommended for production systems, but useful for debugging.
   | OHF_emit_warning
+  | OHF_emit_warning_exit_failure
 
 --------------------------------------------------------------------------------
 -- | Efficiently decrypts an incoming stream of bytes.
@@ -196,6 +199,7 @@ decryptStreamWith onInvalidHMAC userKey inS outS = do
           OHF_abort        -> throwIO invalidHMacEx
           OHF_emit_warning -> do
             hPutStrLn stderr (displayException invalidHMacEx)
+          OHF_emit_warning_exit_failure -> do
             exitFailure
 
 --------------------------------------------------------------------------------
