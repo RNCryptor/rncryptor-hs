@@ -1,15 +1,20 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use if" #-}
 module Crypto.RNCryptor.V3.Decrypt
   ( parseHeader
   , decrypt
   , decryptBlock
   , decryptStream
+  , decryptStreamWith
+  , decryptStreamLenient
+  , OnHMACFailure(..)
   ) where
 
+import           Control.Exception           (throwIO, Exception (..))
 import           Control.Monad               (unless)
 import           Control.Monad.State
-import           Control.Exception           (throwIO)
 import           Crypto.Cipher.AES           (AES256)
 import           Crypto.Cipher.Types         (IV, makeIV, BlockCipher, cbcDecrypt)
 import           Crypto.MAC.HMAC             (update, finalize)
@@ -18,11 +23,13 @@ import           Crypto.RNCryptor.V3.Stream
 import           Data.Bits                   (xor, (.|.))
 import           Data.ByteArray              (convert)
 import           Data.ByteString             (ByteString)
-import qualified Data.ByteString as B
 import           Data.Foldable
 import           Data.Maybe                  (fromMaybe)
 import           Data.Monoid
 import           Data.Word
+import           System.Exit (exitFailure)
+import           System.IO (hPutStrLn, stderr)
+import qualified Data.ByteString as B
 import qualified System.IO.Streams as S
 
 --------------------------------------------------------------------------------
@@ -92,9 +99,14 @@ parseIV = parseBSOfSize 16 "parseIV: not enough bytes."
 -- data = data[:-bord(data[-1])]
 -- https://github.com/RNCryptor/RNCryptor-python/blob/master/RNCryptor.py#L69
 removePaddingSymbols :: ByteString -> ByteString
-removePaddingSymbols input =
-  let lastWord = B.last input
-  in B.take (B.length input - fromEnum lastWord) input
+removePaddingSymbols input
+  | B.null input = input
+  | otherwise =
+      let lastByte = B.last input
+          padLength = fromEnum lastByte
+      in if padLength <= 16 && padLength <= B.length input
+           then B.take (B.length input - padLength) input
+           else input -- Invalid padding byte, return original input
 
 --------------------------------------------------------------------------------
 decryptBytes :: AES256 -> ByteString -> ByteString -> ByteString
@@ -151,16 +163,24 @@ decrypt input pwd =
        True  -> Right (removePaddingSymbols clearText)
        False -> Left (InvalidHMACException msgHMAC hmac)
 
+
+data OnHMACFailure
+  = OHF_abort
+  -- | Not recommended for production systems, but useful for debugging.
+  | OHF_emit_warning
+  | OHF_emit_warning_exit_failure
+
 --------------------------------------------------------------------------------
 -- | Efficiently decrypts an incoming stream of bytes.
-decryptStream :: ByteString
-              -- ^ The user key (e.g. password)
-              -> S.InputStream ByteString
-              -- ^ The input source (mostly likely stdin)
-              -> S.OutputStream ByteString
-              -- ^ The output source (mostly likely stdout)
-              -> IO ()
-decryptStream userKey inS outS = do
+decryptStreamWith :: OnHMACFailure
+                  -> ByteString
+                  -- ^ The user key (e.g. password)
+                  -> S.InputStream ByteString
+                  -- ^ The input source (mostly likely stdin)
+                  -> S.OutputStream ByteString
+                  -- ^ The output source (mostly likely stdout)
+                  -> IO ()
+decryptStreamWith onInvalidHMAC userKey inS outS = do
   rawHdr <- S.readExactly 34 inS
   let hdr = parseHeader rawHdr
       ctx = newRNCryptorContext userKey hdr
@@ -171,5 +191,36 @@ decryptStream userKey inS outS = do
       let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
           (ctx', clearText)     = decryptBlock ctx cipherText
           hmac = convert $ finalize (ctxHMACCtx ctx')
-      unless (consistentTimeEqual msgHMAC hmac) (throwIO $ InvalidHMACException msgHMAC hmac)
       S.write (Just $ removePaddingSymbols clearText) outS
+      let invalidHMacEx = InvalidHMACException msgHMAC hmac
+      case consistentTimeEqual msgHMAC hmac of
+        True  -> pure ()
+        False -> case onInvalidHMAC of
+          OHF_abort        -> throwIO invalidHMacEx
+          OHF_emit_warning -> do
+            hPutStrLn stderr (displayException invalidHMacEx)
+          OHF_emit_warning_exit_failure -> do
+            exitFailure
+
+--------------------------------------------------------------------------------
+-- | Efficiently decrypts an incoming stream of bytes.
+decryptStream :: ByteString
+              -- ^ The user key (e.g. password)
+              -> S.InputStream ByteString
+              -- ^ The input source (mostly likely stdin)
+              -> S.OutputStream ByteString
+              -- ^ The output source (mostly likely stdout)
+              -> IO ()
+decryptStream = decryptStreamWith OHF_abort
+
+--------------------------------------------------------------------------------
+-- | Efficiently decrypts an incoming stream of bytes, not failing if the
+-- stream fails HMAC validation.
+decryptStreamLenient :: ByteString
+                     -- ^ The user key (e.g. password)
+                     -> S.InputStream ByteString
+                     -- ^ The input source (mostly likely stdin)
+                     -> S.OutputStream ByteString
+                     -- ^ The output source (mostly likely stdout)
+                     -> IO ()
+decryptStreamLenient = decryptStreamWith OHF_emit_warning
