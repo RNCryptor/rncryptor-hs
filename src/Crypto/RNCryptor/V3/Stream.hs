@@ -1,28 +1,43 @@
-{-# LANGUAGE BangPatterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use if" #-}
 module Crypto.RNCryptor.V3.Stream
   ( processStream
-  , StreamingState(..)
   ) where
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import           Data.Word
 import           Control.Monad.State
 import           Crypto.RNCryptor.Types
+import           Data.Bifunctor
+import           Data.ByteString (ByteString)
+import           Data.Foldable (foldlM)
 import           Data.Monoid
+import           Data.Word
+import qualified Data.ByteString as B
 import qualified System.IO.Streams as S
+import Data.Maybe (isNothing)
+import Control.Exception
 
---------------------------------------------------------------------------------
--- | The 'StreamingState' the streamer can be at. This is needed to drive the
--- computation as well as reading leftovers unread back in case we need to
--- chop the buffer read, if not multiple of the 'blockSize'.
-data StreamingState =
-    Continue
-  | FetchLeftOver !Int
-  | DrainSource deriving (Show, Eq)
+newtype Block
+  = Block { _Block :: ByteString }
+  deriving (Show, Eq)
 
---------------------------------------------------------------------------------
--- | Efficiently transform an incoming stream of bytes.
+-- | Splits the input string into blocks of size 'blockSize' and returns them
+-- alongside the leftover.
+--getBlocks :: ByteString -> ([Block], B.ByteString)
+--getBlocks bs = go (B.splitAt blockSize bs)
+--  where
+--    go :: (ByteString, ByteString) -> ([Block], ByteString)
+--    go (candidateBlock, leftover)
+--      | B.length candidateBlock < blockSize
+--      = ([], candidateBlock <> leftover)
+--      | otherwise
+--      = first (\x -> Block candidateBlock : x) $ go (B.splitAt blockSize leftover)
+
+getBlocks :: ByteString -> (ByteString, ByteString)
+getBlocks input =
+  let bsL = B.length input
+      num = bsL `div` blockSize
+  in B.splitAt (num * blockSize) input
+
 processStream :: RNCryptorContext
               -- ^ The RNCryptor context for this operation
               -> S.InputStream ByteString
@@ -34,38 +49,39 @@ processStream :: RNCryptorContext
               -> (ByteString -> RNCryptorContext -> IO ())
               -- ^ The finaliser
               -> IO ()
-processStream context inS outS blockFn finaliser = go Continue mempty context
+processStream context inS outS applyToBlock finaliser = do
+  rawBytes <- S.read inS
+  uncurry finaliser =<< go rawBytes context
   where
-    slack input = let bsL = B.length input in (bsL, bsL `mod` blockSize)
 
-    go :: StreamingState -> ByteString -> RNCryptorContext -> IO ()
-    go dc !iBuffer ctx = do
-      nextChunk <- case dc of
-        FetchLeftOver size -> do
-          lo <- S.readExactly size inS
-          p  <- S.read inS
-          return $ fmap (mappend lo) p
-        _ -> S.read inS
-      case nextChunk of
-        Nothing -> finaliser iBuffer ctx
-        (Just v) -> do
-          let (sz, sl) = slack v
-          case dc of
-            DrainSource -> go DrainSource (iBuffer <> v) ctx
-            _ -> do
-              whatsNext <- S.peek inS
-              case whatsNext of
-                Nothing -> finaliser (iBuffer <> v) ctx
-                Just nt ->
-                  case sz + B.length nt < 4096 of
-                    True  -> go DrainSource (iBuffer <> v) ctx
-                    False -> do
-                      -- If I'm here, it means I can safely process this chunk
-                      let (toProcess, rest) = B.splitAt (sz - sl) v
-                      let (newCtx, res) = blockFn ctx toProcess
-                      S.write (Just res) outS
-                      case sl == 0 of
-                        False -> do
-                          S.unRead rest inS
-                          go (FetchLeftOver sl) iBuffer newCtx
-                        True -> go Continue iBuffer newCtx
+    go :: Maybe ByteString -> RNCryptorContext -> IO (ByteString, RNCryptorContext)
+    go readBytes currentContext = case readBytes of
+      Nothing    -> pure (mempty, currentContext)
+      Just bytes -> do
+        -- check if there is more.
+        next <- S.peek inS
+        case next of
+          Nothing  -> pure (bytes, currentContext)
+          Just nxt
+            -- If the length of what we still have to read is less than 32 bytes
+            -- it means we have read in the middle of the HMAC, which means we
+            -- need to stop as this would be our last block.
+            | B.length nxt < 32
+            -> do
+              drained <- S.toList inS
+              pure (bytes <> mconcat drained, currentContext)
+            | otherwise
+            -> do
+              let (blocks, leftover) = getBlocks bytes
+              case B.null blocks of
+                True -> throwIO $ ImpossibleNoMoreBlocks leftover
+                _    -> do
+                  ctx' <- processBlocks currentContext blocks
+                  rawBytes <- S.read inS
+                  go (maybe (Just leftover) (\x -> Just $ leftover <> x) rawBytes) ctx'
+
+    processBlocks :: RNCryptorContext -> ByteString -> IO RNCryptorContext
+    processBlocks currentContext blocks = do
+      let (ctx', text) = applyToBlock currentContext blocks
+      S.write (Just text) outS
+      pure ctx'

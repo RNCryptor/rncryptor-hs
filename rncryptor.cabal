@@ -88,6 +88,22 @@ executable rncryptor-decrypt
   ghc-options:
     -funbox-strict-fields
 
+executable rncryptor-decrypt-simple
+  build-depends:
+      base
+    , bytestring
+    , cryptonite >= 0.15
+    , io-streams
+    , rncryptor -any
+  hs-source-dirs:
+    example
+  main-is:
+    DecrypterSimple.hs
+  default-language:
+    Haskell2010
+  ghc-options:
+    -funbox-strict-fields
+
 executable rncryptor-encrypt
   build-depends:
       base

@@ -39,27 +39,38 @@ import "cryptonite" Crypto.KDF.PBKDF2
 import              Crypto.MAC.HMAC (Context, initialize, hmac)
 import qualified    Crypto.MAC.HMAC as Crypto
 import              Data.ByteArray (ByteArray, convert)
-import              Data.ByteString (cons, ByteString, unpack)
+import              Data.ByteString (cons, ByteString, unpack, intersperse)
 import qualified    Data.ByteString.Char8 as C8
+import qualified    Data.ByteString as B
 import              Data.Monoid
 import              Data.Typeable
 import              Data.Word
 import              System.Random
 import              Test.QuickCheck (Arbitrary(..), vector)
+import              Text.Printf (printf)
+import qualified Data.List as L
 
 
 data RNCryptorException =
-  InvalidHMACException !ByteString !ByteString
-  -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
-  -- second the computed one.
+    InvalidHMACException !ByteString !ByteString
+    -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
+    -- second the computed one.
+  | ImpossibleNoMoreBlocks !ByteString
   deriving (Typeable, Eq)
 
 instance Show RNCryptorException where
   show (InvalidHMACException untrusted computed) =
-    "InvalidHMACException: Untrusted HMAC was " <> show (unpack untrusted)
-                                                <> ", but the computed one is " <> show (unpack computed) <> "."
+    "InvalidHMACException: Untrusted HMAC was " <> showHex untrusted
+                                                <> "(" <> show (B.length untrusted) <> " bytes), "
+                                                <> " but the computed one is "
+                                                <> showHex computed
+                                                <> "(" <> show (B.length computed) <> " bytes)."
+  show (ImpossibleNoMoreBlocks l) = "No more blocks to stream (leftover: " <> showHex l
 
 instance Exception RNCryptorException
+
+showHex :: B.ByteString -> String
+showHex = L.unwords . map (printf "%02x") . B.unpack
 
 type Password = ByteString
 type HMAC = ByteString
