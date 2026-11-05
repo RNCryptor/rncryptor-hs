@@ -63,7 +63,8 @@ encryptStreamWithContext :: RNCryptorContext
                          -> IO ()
 encryptStreamWithContext ctx inS outS = do
   S.write (Just (renderRNCryptorHeader $ ctxHeader ctx)) outS
-  processStream ctx inS outS encryptBlock finaliseEncryption
+  -- Nothing to hold back: the finaliser pads whatever tail is left.
+  processStream 0 ctx inS outS encryptBlock finaliseEncryption
   where
     finaliseEncryption lastBlock lastCtx = do
       let (ctx', cipherText) = encryptBlock lastCtx (lastBlock <> pkcs7Padding blockSize (B.length lastBlock))

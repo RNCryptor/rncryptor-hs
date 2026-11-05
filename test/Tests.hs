@@ -72,3 +72,64 @@ testForeignEncryption = do
                               ]
   let swiftPassword = B.pack [112,97,115,115,119,111,114,100]
   decrypt swiftEncrypted swiftPassword @=? Right "01"
+
+--------------------------------------------------------------------------------
+-- Streaming with arbitrary chunking. A pipe hands io-streams whatever is in
+-- the buffer at read time, down to a single byte, so the streaming code must
+-- produce the same output for every way of cutting the input into chunks.
+
+-- | Cut the input into chunks of the given sizes; whatever the sizes don't
+-- cover becomes one final chunk. Non-positive sizes are skipped.
+chunksOf :: [Int] -> B.ByteString -> [B.ByteString]
+chunksOf _ bs | B.null bs = []
+chunksOf [] bs = [bs]
+chunksOf (n:ns) bs
+  | n <= 0    = chunksOf ns bs
+  | otherwise = let (h, t) = B.splitAt n bs in h : chunksOf ns t
+
+-- | Chunk sizes biased towards slivers smaller than a block + HMAC.
+newtype ChunkSizes = ChunkSizes [Int] deriving Show
+
+instance Arbitrary ChunkSizes where
+  arbitrary = ChunkSizes <$> listOf (frequency [(4, choose (1, 48)), (1, choose (49, 4096))])
+  shrink (ChunkSizes xs) = ChunkSizes <$> shrink xs
+
+chunkedRoundTrip :: B.ByteString -> [Int] -> [Int] -> B.ByteString -> IO B.ByteString
+chunkedRoundTrip key encChunks decChunks plainText = do
+  plainTextInS                      <- fromList (chunksOf encChunks plainText)
+  (cipherTextOutS, flushCipherText) <- listOutputStream
+  encryptStream key plainTextInS cipherTextOutS
+  cipherText                        <- B.concat <$> flushCipherText
+  cipherTextInS                     <- fromList (chunksOf decChunks cipherText)
+  (plainTextOutS, flushPlainText)   <- listOutputStream
+  decryptStream key cipherTextInS plainTextOutS
+  B.concat <$> flushPlainText
+
+testChunkedStreamingRoundtrip :: UserInput -> ChunkSizes -> ChunkSizes -> ArbByteString -> Property
+testChunkedStreamingRoundtrip pwd (ChunkSizes encChunks) (ChunkSizes decChunks) input =
+  B.length (unInput pwd) > 0 ==> M.monadicIO $ do
+    let plainText = fromABS input
+    input' <- M.run (chunkedRoundTrip (unInput pwd) encChunks decChunks plainText)
+    M.assert (plainText == input')
+
+testOneByteChunks :: Assertion
+testOneByteChunks = do
+  let plainText = C8.pack (take 1000 (cycle ['a'..'z']))
+      ones      = repeat 1
+  input' <- chunkedRoundTrip "password" ones ones plainText
+  input' @?= plainText
+
+-- The final chunk is exactly the 32-byte HMAC, so the last cipher block
+-- arrives in the chunk before it.
+testHMACAsFinalChunk :: Assertion
+testHMACAsFinalChunk = do
+  let plainText = C8.pack (take 1000 (cycle ['a'..'z']))
+  plainTextInS                      <- fromByteString plainText
+  (cipherTextOutS, flushCipherText) <- listOutputStream
+  encryptStream "password" plainTextInS cipherTextOutS
+  cipherText                        <- B.concat <$> flushCipherText
+  cipherTextInS                     <- fromList (chunksOf [B.length cipherText - 32] cipherText)
+  (plainTextOutS, flushPlainText)   <- listOutputStream
+  decryptStream "password" cipherTextInS plainTextOutS
+  input'                            <- B.concat <$> flushPlainText
+  input' @?= plainText
