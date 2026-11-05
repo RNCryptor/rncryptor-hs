@@ -55,7 +55,10 @@ data RNCryptorException =
     InvalidHMACException !ByteString !ByteString
     -- ^ HMAC validation failed. First parameter is the untrusted hmac, the
     -- second the computed one.
-  | ImpossibleNoMoreBlocks !ByteString
+  | TruncatedStream !Int
+    -- ^ The stream ended before a whole trailer (at least one cipher block
+    -- plus the 32-byte HMAC, block aligned) could be read. Carries the number
+    -- of trailing bytes that were available.
   deriving (Typeable, Eq)
 
 instance Show RNCryptorException where
@@ -65,7 +68,9 @@ instance Show RNCryptorException where
                                                 <> " but the computed one is "
                                                 <> showHex computed
                                                 <> "(" <> show (B.length computed) <> " bytes)."
-  show (ImpossibleNoMoreBlocks l) = "No more blocks to stream (leftover: " <> showHex l
+  show (TruncatedStream n) =
+    "TruncatedStream: input ended with " <> show n <> " trailing bytes, "
+      <> "need at least " <> show (blockSize + 32) <> " and block aligned before the HMAC."
 
 instance Exception RNCryptorException
 

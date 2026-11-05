@@ -185,10 +185,14 @@ decryptStreamWith onInvalidHMAC userKey inS outS = do
   let hdr = parseHeader rawHdr
       ctx = newRNCryptorContext userKey hdr
       ctx' = ctx { ctxHMACCtx = update (ctxHMACCtx ctx) rawHdr }
-  processStream ctx' inS outS decryptBlock finaliseDecryption
+  -- Hold back the last cipher block (PKCS#7 padding lives there) plus the HMAC.
+  processStream (blockSize + 32) ctx' inS outS decryptBlock finaliseDecryption
   where
-    finaliseDecryption lastBlock ctx = do
-      let (cipherText, msgHMAC) = B.splitAt (B.length lastBlock - 32) lastBlock
+    finaliseDecryption trailer ctx = do
+      let trailerLen = B.length trailer
+      unless (trailerLen >= blockSize + 32 && (trailerLen - 32) `rem` blockSize == 0) $
+        throwIO (TruncatedStream trailerLen)
+      let (cipherText, msgHMAC) = B.splitAt (trailerLen - 32) trailer
           (ctx', clearText)     = decryptBlock ctx cipherText
           hmac = convert $ finalize (ctxHMACCtx ctx')
       S.write (Just $ removePaddingSymbols clearText) outS

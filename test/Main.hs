@@ -26,8 +26,13 @@ main = do
                , testCase "Multibyte password" Pwd.multibytePassword
                , testCase "Longer text and password" Pwd.longerTextAndPassword
                ]
+           , testGroup "Streaming with chunked input" [
+                 testCase "one-byte chunks" testOneByteChunks
+               , testCase "HMAC as final chunk" testHMACAsFinalChunk
+               ]
          , withQuickCheckDepth "RNCryptor properties" 100 [
              testProperty "encrypt/decrypt roundtrip" testEncryptDecryptRoundtrip
            , testProperty "encrypt/decrypt streaming roundtrip" testStreamingEncryptDecryptRoundtrip
+           , testProperty "encrypt/decrypt chunked streaming roundtrip" testChunkedStreamingRoundtrip
          ]
      ]
